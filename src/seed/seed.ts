@@ -30,12 +30,12 @@ const STORES = [
   { id: SEED.stores.jeongja, name: '픽미 DT 정자점', lat: 37.367, lng: 127.108, loginId: 'jeongja' },
 ];
 
-const MENU = [
+const MENU: { id: string; name: string; price: number; prepSec: number; unit?: string }[] = [
   { id: SEED.menu.americano, name: '아메리카노', price: 4500, prepSec: 90 },
   { id: SEED.menu.latte, name: '카페라떼', price: 5000, prepSec: 120 },
   { id: SEED.menu.vanillaLatte, name: '바닐라라떼', price: 5500, prepSec: 120 },
   { id: SEED.menu.coldBrew, name: '콜드브루', price: 5000, prepSec: 60 },
-  { id: SEED.menu.sandwich, name: '햄치즈 샌드위치', price: 6500, prepSec: 180 },
+  { id: SEED.menu.sandwich, name: '햄치즈 샌드위치', price: 6500, prepSec: 180, unit: '개' },
 ];
 
 /** 시연용 기본 데이터를 넣는다. 여러 번 실행해도 결과가 같다. */
@@ -66,7 +66,7 @@ export async function seed(prisma: PrismaClient): Promise<void> {
   }
 
   for (const m of MENU) {
-    const item = { brandId: SEED.brandId, name: m.name, price: m.price, prepSec: m.prepSec };
+    const item = { brandId: SEED.brandId, name: m.name, price: m.price, prepSec: m.prepSec, unit: m.unit ?? '잔' };
     await prisma.menuItem.upsert({ where: { id: m.id }, update: item, create: { id: m.id, ...item } });
   }
 
