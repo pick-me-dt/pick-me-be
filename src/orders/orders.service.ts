@@ -144,6 +144,29 @@ export class OrdersService {
     return orders.map(toOrderView);
   }
 
+  /** 전송 전 주문의 매장을 바꾼다 (DT 대기줄 회피). 같은 메뉴를 새 매장 브랜드 메뉴에서 다시 찾는다. */
+  async changeStore(driver: DriverPrincipal, orderId: string, storeId: string) {
+    const order = await this.findOwnOrder(driver, orderId);
+    if (order.status !== 'RESERVED' && order.status !== 'NEEDS_CONFIRMATION') {
+      throw new ConflictException('매장에 전송된 주문은 매장을 바꿀 수 없습니다');
+    }
+    const store = await this.findOpenStore(storeId);
+    const lines = await this.resolveLines(driver.userId, store, {
+      storeId,
+      items: order.items.map((i) => ({ menuItemId: i.menuItemId, qty: i.qty })),
+    });
+
+    const { count } = await this.prisma.order.updateMany({
+      where: { id: orderId, status: { in: ['RESERVED', 'NEEDS_CONFIRMATION'] } },
+      data: { storeId: store.id, estPrepSec: await this.estimatePrep(store, lines), totalAmount: this.total(lines) },
+    });
+    if (count === 0) throw new ConflictException('매장에 전송된 주문은 매장을 바꿀 수 없습니다');
+    await this.recordEvent(orderId, 'store_changed', { from: order.storeId, to: store.id });
+
+    const updated = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: ORDER_INCLUDE });
+    return { order: toOrderView(updated), tts: `${store.name}으로 바꿨어요.` };
+  }
+
   // ── 타이밍 엔진 ──────────────────────────────────────────
 
   /**
@@ -209,7 +232,9 @@ export class OrdersService {
       await this.transition(orderId, 'READY', { readyAt: new Date() }, { type: 'ready' });
     }
     await this.payments.capture(orderId);
-    return this.transition(orderId, 'PICKED_UP', { pickedUpAt: new Date() }, { type: 'picked_up' }, '맛있게 드세요.');
+    const pickedUpAt = new Date();
+    await this.closeDtVisit(orderId, pickedUpAt);
+    return this.transition(orderId, 'PICKED_UP', { pickedUpAt }, { type: 'picked_up' }, '맛있게 드세요.');
   }
 
   async cancelByStore(storeId: string, orderId: string, note?: string) {
@@ -275,6 +300,16 @@ export class OrdersService {
   }
 
   // ── 내부 ─────────────────────────────────────────────
+
+  /** DT 차로 진입~수령 시간 기록. 이후 대기열 예측에 쓴다 */
+  private async closeDtVisit(orderId: string, pickedUpAt: Date) {
+    const visit = await this.prisma.dtVisit.findUnique({ where: { orderId } });
+    if (!visit || visit.pickedUpAt) return;
+    await this.prisma.dtVisit.update({
+      where: { orderId },
+      data: { pickedUpAt, waitSec: Math.round((pickedUpAt.getTime() - visit.laneEnteredAt.getTime()) / 1000) },
+    });
+  }
 
   private async findOwnOrder(driver: DriverPrincipal, orderId: string) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE });

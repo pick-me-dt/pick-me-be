@@ -18,3 +18,31 @@ export function estimatePrepSec(lines: PrepLine[], basePrepSec: number, ordersIn
   const raw = longest + EXTRA_ITEM_SEC * Math.max(0, totalQty - 1);
   return Math.round(raw * (1 + LOAD_FACTOR_PER_ORDER * ordersInProgress));
 }
+
+/** 직선거리를 도로 거리로 환산하는 계수 */
+export const ROAD_FACTOR = 1.3;
+/** ETA 추정에 쓰는 최저 속도(km/h). 정차 중에도 ETA가 무한대가 되지 않게 한다 */
+export const MIN_SPEED_KMH = 20;
+
+/** 내비 ETA가 없을 때 위치·속도로 추정한 남은 시간(초) */
+export function fallbackEtaSec(distanceM: number, speedKmh: number): number {
+  const speedMps = (Math.max(speedKmh, MIN_SPEED_KMH) * 1000) / 3600;
+  return Math.round((distanceM * ROAD_FACTOR) / speedMps);
+}
+
+/** DT 대기줄 시간(초) = 대기 차량 수 × 차량당 처리 시간 */
+export function queueWaitSec(cars: number, serviceSecPerCar: number): number {
+  return cars * serviceSecPerCar;
+}
+
+export interface SendInput {
+  etaSec: number;
+  queueSec: number;
+  prepSec: number;
+  marginSec: number;
+}
+
+/** 창구 도착까지 남은 시간(ETA + 대기줄)이 제조 시간 + 여유 이하로 떨어지면 보낸다 */
+export function shouldSend({ etaSec, queueSec, prepSec, marginSec }: SendInput): boolean {
+  return etaSec + queueSec <= prepSec + marginSec;
+}

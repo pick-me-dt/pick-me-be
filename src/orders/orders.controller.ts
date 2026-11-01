@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { CurrentDriver, RequireRole } from '../auth/auth.decorators';
 import { DriverPrincipal } from '../auth/auth.types';
-import { CancelOrderDto, OrderRequestDto, ReserveOrderDto } from './orders.dto';
+import { CancelOrderDto, ChangeStoreDto, OrderRequestDto, ReserveOrderDto } from './orders.dto';
 import { OrdersService } from './orders.service';
 
 @Controller('orders')
@@ -59,5 +59,15 @@ export class OrdersController {
   @HttpCode(200)
   cancel(@CurrentDriver() driver: DriverPrincipal, @Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelOrderDto) {
     return this.orders.cancelByDriver(driver, id, dto.reason);
+  }
+
+  @Post(':id/change-store')
+  @HttpCode(200)
+  changeStore(
+    @CurrentDriver() driver: DriverPrincipal,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChangeStoreDto,
+  ) {
+    return this.orders.changeStore(driver, id, dto.storeId);
   }
 }
