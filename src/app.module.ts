@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthModule } from './auth/auth.module';
+import { DevModule } from './dev/dev.module';
 import { HealthController } from './health.controller';
 import { OrdersModule } from './orders/orders.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -23,6 +24,7 @@ import { UsersModule } from './users/users.module';
     TimingModule,
     RealtimeModule,
     StoreDashboardModule,
+    DevModule,
   ],
   controllers: [HealthController],
 })
