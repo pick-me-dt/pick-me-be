@@ -47,6 +47,8 @@ export interface Alternative {
 export class TimingEngine implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TimingEngine.name);
   private readonly inFlight = new Set<string>();
+  /** 평가 중에 새 신호가 들어온 주문. 지금 평가가 끝나면 한 번 더 평가한다 */
+  private readonly pending = new Set<string>();
   private readonly lastEtaEmitAt = new Map<string, number>();
   private readonly delayNotifiedSec = new Map<string, number>();
   private readonly queueAlerted = new Set<string>();
@@ -73,7 +75,7 @@ export class TimingEngine implements OnModuleInit, OnModuleDestroy {
   }
 
   /** 진행 중인 주문 전체를 평가한다 */
-  async sweep(now = Date.now()) {
+  async sweep(now?: number) {
     const active = await this.prisma.order.findMany({
       where: { status: { in: ['RESERVED', 'SENT', 'PREPARING', 'READY'] } },
       select: { id: true },
@@ -81,10 +83,25 @@ export class TimingEngine implements OnModuleInit, OnModuleDestroy {
     for (const { id } of active) await this.evaluate(id, now);
   }
 
-  /** 주문 하나를 평가한다. 같은 주문을 동시에 평가하지 않는다. */
-  async evaluate(orderId: string, now = Date.now()) {
-    if (this.inFlight.has(orderId)) return;
+  /**
+   * 주문 하나를 평가한다. 같은 주문을 동시에 평가하지 않고,
+   * 평가 중에 들어온 요청은 버리지 않고 끝난 뒤 한 번 더 평가한다.
+   */
+  async evaluate(orderId: string, now?: number): Promise<void> {
+    if (this.inFlight.has(orderId)) {
+      this.pending.add(orderId);
+      return;
+    }
     this.inFlight.add(orderId);
+    try {
+      await this.evaluateOnce(orderId, now ?? Date.now());
+    } finally {
+      this.inFlight.delete(orderId);
+    }
+    if (this.pending.delete(orderId)) await this.evaluate(orderId, now);
+  }
+
+  private async evaluateOnce(orderId: string, now: number) {
     try {
       const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { items: true, store: true } });
       if (!order) return;
@@ -102,8 +119,6 @@ export class TimingEngine implements OnModuleInit, OnModuleDestroy {
       }
     } catch (e) {
       this.logger.error(`주문 평가 실패 ${orderId}: ${e instanceof Error ? e.stack : e}`);
-    } finally {
-      this.inFlight.delete(orderId);
     }
   }
 
