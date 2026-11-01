@@ -31,3 +31,8 @@ export class CancelOrderDto {
   @MaxLength(200)
   reason?: string;
 }
+
+export class ChangeStoreDto {
+  @IsUUID()
+  storeId: string;
+}

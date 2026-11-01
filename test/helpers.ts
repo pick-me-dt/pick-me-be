@@ -7,11 +7,19 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { seed, SEED } from '../src/seed/seed';
 
 export async function createTestApp(): Promise<INestApplication> {
+  // 스위퍼는 끄고, 테스트가 TimingEngine.evaluate(now)를 직접 불러 시간을 다룬다
+  process.env.TIMING_SWEEP_MS = '0';
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication();
   configureApp(app);
   await app.init();
-  await seed(app.get(PrismaService));
+  const prisma = app.get(PrismaService);
+  await seed(prisma);
+  // 이전 실행에서 남은 진행 중 주문이 매장 부하(제조 시간 추정)에 섞이지 않게 정리한다
+  await prisma.order.updateMany({
+    where: { status: { in: ['NEEDS_CONFIRMATION', 'RESERVED', 'SENT', 'PREPARING', 'READY'] } },
+    data: { status: 'CANCELLED', cancelReason: 'TEST_CLEANUP' },
+  });
   return app;
 }
 
