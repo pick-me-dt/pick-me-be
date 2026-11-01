@@ -29,6 +29,7 @@ npm run start:dev
 ```
 
 - API: `http://localhost:3000/v1`
+- API 문서(Swagger): `http://localhost:3000/docs` (OpenAPI JSON: `/docs-json`)
 - 매장 대시보드: `http://localhost:3000/dashboard/` (아이디 `pangyo`, 비밀번호 `pickme1234`)
 - Android 에뮬레이터에서 로컬 서버에 접속할 때는 `http://10.0.2.2:3000`
 
@@ -104,6 +105,8 @@ ETA + 대기줄 시간(대기 차량 × 차량당 처리 시간) <= 제조 시�
 ## API
 
 모든 경로는 `/v1` 아래입니다. 인증은 `Authorization: Bearer <token>`.
+
+요청·응답 스키마까지 보려면 서버를 띄우고 [Swagger](http://localhost:3000/docs)를 여세요. 오른쪽 위 **Authorize**에 `driver`(기기 등록 토큰)나 `staff`(직원 로그인 토큰)를 넣으면 화면에서 바로 호출해 볼 수 있습니다. 요청·응답 스키마는 `nest build`의 Swagger 플러그인이 DTO와 주석에서 만듭니다.
 
 ### 차량 앱 (운전자 토큰)
 

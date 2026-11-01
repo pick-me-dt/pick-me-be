@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { MockDtAdapter } from '../channels/mock-dt/mock-dt.adapter';
 import { OrdersService } from '../orders/orders.service';
 import { ACTIVE_STATUSES } from '../orders/order-state';
@@ -10,6 +11,7 @@ import { DemoRunDto, SetQueueDto, SimulateTripDto } from './dev.dto';
 import { SimulatorService } from './simulator.service';
 
 /** 개발·시연용. ENABLE_DEV_ROUTES=true일 때만 열린다 */
+@ApiTags('dev')
 @Controller('dev')
 @UseGuards(DevRoutesGuard)
 export class DevController {
@@ -23,6 +25,7 @@ export class DevController {
 
   @Post('seed')
   @HttpCode(200)
+  @ApiOperation({ summary: '시드 데이터 다시 넣기' })
   async seed() {
     await seed(this.prisma);
     return { ok: true };
@@ -30,6 +33,7 @@ export class DevController {
 
   @Post('mock-dt/stores/:id/queue')
   @HttpCode(200)
+  @ApiOperation({ summary: '목업 DT 대기 차량 수 설정' })
   setQueue(@Param('id', ParseUUIDPipe) storeId: string, @Body() dto: SetQueueDto) {
     this.mockDt.setQueue(storeId, dto.cars);
     return { storeId, cars: dto.cars };
@@ -37,17 +41,20 @@ export class DevController {
 
   @Post('simulate/trip')
   @HttpCode(200)
+  @ApiOperation({ summary: '기존 주문에 주행 시뮬레이션 시작' })
   simulateTrip(@Body() dto: SimulateTripDto) {
     const { orderId, ...options } = dto;
     return this.simulator.start(orderId, options);
   }
 
   @Get('simulate')
+  @ApiOperation({ summary: '실행 중 시뮬레이션' })
   running() {
     return this.simulator.list();
   }
 
   @Delete('simulate/:orderId')
+  @ApiOperation({ summary: '시뮬레이션 중지' })
   stop(@Param('orderId', ParseUUIDPipe) orderId: string) {
     return { stopped: this.simulator.stop(orderId) };
   }
@@ -60,6 +67,10 @@ export class DevController {
    */
   @Post('demo-run')
   @HttpCode(200)
+  @ApiOperation({
+    summary: '시연 한 번에 실행',
+    description: '시연 차량이 "평소 그거"를 음성 주문하고 주행을 시작한다. 주행 → 전송 → 정체 지연 → 차로 진입 → (autoStore면) 준비 완료.',
+  })
   async demoRun(@Body() dto: DemoRunDto) {
     await seed(this.prisma);
     const stale = await this.prisma.order.findMany({ where: { vehicleId: SEED.vehicleId, status: { in: ACTIVE_STATUSES } } });

@@ -1,6 +1,8 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class UpdateStoreOrderDto {
+  @ApiProperty({ enum: ['PREPARING', 'READY', 'PICKED_UP', 'CANCELLED'] })
   @IsIn(['PREPARING', 'READY', 'PICKED_UP', 'CANCELLED'])
   status: 'PREPARING' | 'READY' | 'PICKED_UP' | 'CANCELLED';
 

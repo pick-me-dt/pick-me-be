@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { OrderSource } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsEnum, IsOptional, IsString, IsUUID, MaxLength, ValidateIf, ValidateNested } from 'class-validator';
@@ -21,6 +22,7 @@ export class OrderRequestDto {
 
 export class ReserveOrderDto extends OrderRequestDto {
   /** VOICE: Gleo·STT 음성 주문, SCREEN: 정차 중 화면 주문 */
+  @ApiProperty({ enum: OrderSource, enumName: 'OrderSource' })
   @IsEnum(OrderSource)
   source: OrderSource;
 }
