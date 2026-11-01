@@ -1,0 +1,254 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  NEEDS_CONFIRMATION
+  RESERVED
+  SENT
+  PREPARING
+  READY
+  PICKED_UP
+  CANCELLED
+}
+
+enum OrderSource {
+  VOICE
+  SCREEN
+}
+
+enum ChannelType {
+  MOCK_DT
+}
+
+enum PaymentStatus {
+  AUTHORIZED
+  CAPTURED
+  VOIDED
+  FAILED
+}
+
+enum TelemetrySource {
+  NAVI
+  FUSED
+}
+
+model User {
+  id                 String          @id @default(uuid())
+  name               String
+  phone              String?
+  voiceOrderEnabled  Boolean         @default(true) @map("voice_order_enabled")
+  voiceLimitPerOrder Int             @default(20000) @map("voice_limit_per_order")
+  voiceLimitDaily    Int             @default(50000) @map("voice_limit_daily")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  vehicles           Vehicle[]
+  paymentMethods     PaymentMethod[]
+  favorites          Favorite[]
+  orders             Order[]
+
+  @@map("users")
+}
+
+model Vehicle {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  plateNumber String   @map("plate_number")
+  deviceId    String   @unique @map("device_id")
+  model       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  user        User     @relation(fields: [userId], references: [id])
+  orders      Order[]
+
+  @@map("vehicles")
+}
+
+model PaymentMethod {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  provider  String
+  token     String
+  label     String
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("payment_methods")
+}
+
+model Brand {
+  id          String      @id @default(uuid())
+  name        String
+  channelType ChannelType @default(MOCK_DT) @map("channel_type")
+  stores      Store[]
+  menuItems   MenuItem[]
+
+  @@map("brands")
+}
+
+model Store {
+  id               String       @id @default(uuid())
+  brandId          String       @map("brand_id")
+  name             String
+  lat              Float
+  lng              Float
+  /// DT 차로 지오펜스: 중심점 + 반경(m)
+  laneLat          Float        @map("lane_lat")
+  laneLng          Float        @map("lane_lng")
+  laneRadiusM      Int          @default(40) @map("lane_radius_m")
+  basePrepSec      Int          @default(60) @map("base_prep_sec")
+  serviceSecPerCar Int          @default(60) @map("service_sec_per_car")
+  marginSec        Int          @default(30) @map("margin_sec")
+  isOpen           Boolean      @default(true) @map("is_open")
+  brand            Brand        @relation(fields: [brandId], references: [id])
+  orders           Order[]
+  staff            StoreStaff[]
+  dtVisits         DtVisit[]
+
+  @@map("stores")
+}
+
+model StoreStaff {
+  id           String @id @default(uuid())
+  storeId      String @map("store_id")
+  loginId      String @unique @map("login_id")
+  passwordHash String @map("password_hash")
+  store        Store  @relation(fields: [storeId], references: [id])
+
+  @@map("store_staff")
+}
+
+model MenuItem {
+  id         String      @id @default(uuid())
+  brandId    String      @map("brand_id")
+  name       String
+  price      Int
+  prepSec    Int         @map("prep_sec")
+  options    Json        @default("[]")
+  brand      Brand       @relation(fields: [brandId], references: [id])
+  orderItems OrderItem[]
+
+  @@map("menu_items")
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  storeId   String?  @map("store_id")
+  /// 음성 호출 이름. 예: "평소 그거"
+  alias     String
+  /// [{ menuItemId, qty, options }]
+  items     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("favorites")
+}
+
+model Order {
+  id              String       @id @default(uuid())
+  userId          String       @map("user_id")
+  vehicleId       String       @map("vehicle_id")
+  storeId         String       @map("store_id")
+  status          OrderStatus
+  source          OrderSource
+  favoriteId      String?      @map("favorite_id")
+  totalAmount     Int          @map("total_amount")
+  plateNumber     String       @map("plate_number")
+  externalOrderId String?      @map("external_order_id")
+  estPrepSec      Int          @map("est_prep_sec")
+  etaAtSendSec    Int?         @map("eta_at_send_sec")
+  idempotencyKey  String?      @unique @map("idempotency_key")
+  sentAt          DateTime?    @map("sent_at")
+  laneEnteredAt   DateTime?    @map("lane_entered_at")
+  readyAt         DateTime?    @map("ready_at")
+  pickedUpAt      DateTime?    @map("picked_up_at")
+  cancelledAt     DateTime?    @map("cancelled_at")
+  cancelReason    String?      @map("cancel_reason")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  user            User         @relation(fields: [userId], references: [id])
+  vehicle         Vehicle      @relation(fields: [vehicleId], references: [id])
+  store           Store        @relation(fields: [storeId], references: [id])
+  items           OrderItem[]
+  events          OrderEvent[]
+  telemetry       Telemetry[]
+  payment         Payment?
+  dtVisit         DtVisit?
+
+  @@index([storeId, status])
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String   @map("order_id")
+  menuItemId String   @map("menu_item_id")
+  name       String
+  unitPrice  Int      @map("unit_price")
+  qty        Int
+  options    Json     @default("[]")
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@map("order_items")
+}
+
+model OrderEvent {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  type      String
+  payload   Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_events")
+}
+
+model Telemetry {
+  id         String          @id @default(uuid())
+  orderId    String          @map("order_id")
+  etaSec     Int?            @map("eta_sec")
+  lat        Float
+  lng        Float
+  speedKmh   Float           @map("speed_kmh")
+  gear       String?
+  source     TelemetrySource
+  recordedAt DateTime        @map("recorded_at")
+  order      Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, recordedAt])
+  @@map("telemetry")
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  orderId     String        @unique @map("order_id")
+  status      PaymentStatus
+  amount      Int
+  providerRef String?       @map("provider_ref")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model DtVisit {
+  id            String    @id @default(uuid())
+  storeId       String    @map("store_id")
+  orderId       String    @unique @map("order_id")
+  laneEnteredAt DateTime  @map("lane_entered_at")
+  pickedUpAt    DateTime? @map("picked_up_at")
+  waitSec       Int?      @map("wait_sec")
+  store         Store     @relation(fields: [storeId], references: [id])
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, pickedUpAt])
+  @@map("dt_visits")
+}

@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: pickme
+      POSTGRES_PASSWORD: pickme
+      POSTGRES_DB: pickme
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  api:
+    build: .
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://pickme:pickme@postgres:5432/pickme?schema=public
+      JWT_SECRET: change-me
+      ENABLE_DEV_ROUTES: "true"
+    ports:
+      - "3000:3000"
+volumes:
+  pgdata:
