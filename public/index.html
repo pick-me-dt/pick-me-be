@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>픽미 매장 대시보드</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #fff; --ink: #1d2433; --quiet: #6b7385; --line: #e3e6ec;
+      --accent: #2563eb; --good: #16a34a; --warn: #d97706; --bad: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; background: var(--bg); color: var(--ink); }
+    header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; background: var(--card); border-bottom: 1px solid var(--line); }
+    header h1 { font-size: 18px; margin: 0; }
+    header .queue { color: var(--quiet); }
+    header .spacer { flex: 1; }
+    main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+    button { font: inherit; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.danger { color: var(--bad); }
+    input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+    .login { max-width: 320px; margin: 80px auto; display: grid; gap: 12px; background: var(--card); padding: 24px; border-radius: 12px; border: 1px solid var(--line); }
+    .login h2 { margin: 0 0 4px; font-size: 18px; }
+    .error { color: var(--bad); font-size: 14px; min-height: 1em; }
+    .pickup { display: flex; gap: 8px; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; }
+    .card.lane { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37, 99, 235, .15); }
+    .plate { font-size: 24px; font-weight: 700; letter-spacing: .5px; }
+    .eta { font-size: 15px; }
+    .eta strong { font-size: 20px; }
+    .items { color: var(--quiet); font-size: 14px; }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eef1f6; }
+    .badge.SENT { background: #e8efff; color: var(--accent); }
+    .badge.PREPARING { background: #fff4e5; color: var(--warn); }
+    .badge.READY { background: #e7f7ec; color: var(--good); }
+    .badge.delay { background: #fdecec; color: var(--bad); }
+    .badge.lane { background: var(--accent); color: #fff; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .empty { color: var(--quiet); text-align: center; padding: 48px 0; }
+    .toast { position: fixed; right: 24px; bottom: 24px; background: var(--ink); color: #fff; padding: 12px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="login" class="login" hidden>
+    <h2>픽미 매장 대시보드</h2>
+    <input id="loginId" placeholder="매장 아이디" autocomplete="username">
+    <input id="password" type="password" placeholder="비밀번호" autocomplete="current-password">
+    <button id="loginBtn" class="primary">로그인</button>
+    <div id="loginError" class="error"></div>
+  </div>
+
+  <div id="app" hidden>
+    <header>
+      <h1 id="storeName">매장</h1>
+      <span class="queue" id="queue"></span>
+      <span class="spacer"></span>
+      <button id="logoutBtn">로그아웃</button>
+    </header>
+    <main>
+      <div class="pickup">
+        <input id="plate" placeholder="차량번호로 수령 처리 (예: 12가3456)">
+        <button id="pickupBtn" class="primary">수령 완료</button>
+      </div>
+      <div id="orders" class="grid"></div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const STATUS_LABEL = { SENT: '접수 대기', PREPARING: '제조 중', READY: '준비 완료' };
+    const NEXT_ACTION = {
+      SENT: { status: 'PREPARING', label: '제조 시작' },
+      PREPARING: { status: 'READY', label: '준비 완료' },
+      READY: { status: 'PICKED_UP', label: '수령 완료' },
+    };
+    let token = localStorage.getItem('pickme.staffToken');
+    let orders = [];
+    const delayed = new Map(); // orderId → 지연(초)
+    let socket;
+
+    const $ = (id) => document.getElementById(id);
+
+    async function api(path, options = {}) {
+      const res = await fetch(`/v1${path}`, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (res.status === 401) { logout(); throw new Error('로그인이 필요합니다'); }
+      const body = res.status === 204 ? null : await res.json();
+      if (!res.ok) throw new Error(body?.message ?? '요청에 실패했습니다');
+      return body;
+    }
+
+    function toast(text) {
+      const el = $('toast');
+      el.textContent = text;
+      el.classList.add('show');
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    function etaText(o) {
+      if (o.laneEnteredAt) return '차로 진입';
+      if (!o.arrivalAt) return '도착 시간 확인 중';
+      const sec = Math.max(0, Math.round((new Date(o.arrivalAt) - Date.now()) / 1000));
+      if (sec === 0) return '곧 도착';
+      return `<strong>${Math.floor(sec / 60)}분 ${String(sec % 60).padStart(2, '0')}초</strong> 후 도착`;
+    }
+
+    function render() {
+      const list = $('orders');
+      list.replaceChildren();
+      if (orders.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = '들어올 주문이 없습니다';
+        list.append(empty);
+        return;
+      }
+      for (const o of orders) {
+        const card = document.createElement('div');
+        card.className = 'card' + (o.laneEnteredAt ? ' lane' : '');
+
+        const plate = document.createElement('div');
+        plate.className = 'plate';
+        plate.textContent = o.plateNumber;
+
+        const eta = document.createElement('div');
+        eta.className = 'eta';
+        eta.dataset.orderId = o.id;
+        eta.innerHTML = etaText(o);
+
+        const items = document.createElement('div');
+        items.className = 'items';
+        items.textContent = o.items.map((i) => `${i.name} × ${i.qty}`).join(', ');
+
+        const badges = document.createElement('div');
+        badges.className = 'badges';
+        const addBadge = (cls, text) => {
+          const b = document.createElement('span');
+          b.className = `badge ${cls}`;
+          b.textContent = text;
+          badges.append(b);
+        };
+        addBadge(o.status, STATUS_LABEL[o.status] ?? o.status);
+        if (o.laneEnteredAt) addBadge('lane', '차로 진입');
+        const delaySec = Math.max(delayed.get(o.id) ?? 0, o.delaySec ?? 0);
+        if (delaySec >= 120) addBadge('delay', `${Math.round(delaySec / 60)}분 지연`);
+
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const next = NEXT_ACTION[o.status];
+        if (next) actions.append(button(next.label, 'primary', () => update(o.id, next.status)));
+        actions.append(button('취소', 'danger', () => confirm(`${o.plateNumber} 주문을 취소할까요?`) && update(o.id, 'CANCELLED')));
+
+        card.append(plate, eta, items, badges, actions);
+        list.append(card);
+      }
+    }
+
+    function button(label, cls, onClick) {
+      const b = document.createElement('button');
+      b.className = cls;
+      b.textContent = label;
+      b.onclick = onClick;
+      return b;
+    }
+
+    async function update(orderId, status) {
+      try {
+        await api(`/store/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+        await refresh();
+      } catch (e) { toast(e.message); }
+    }
+
+    async function refresh() {
+      const [overview, list] = await Promise.all([api('/store'), api('/store/orders')]);
+      $('storeName').textContent = overview.store.name;
+      $('queue').textContent = `DT 대기 ${overview.queue.cars}대`;
+      orders = list;
+      render();
+    }
+
+    function connect() {
+      socket?.disconnect();
+      socket = io('/ws/store', { auth: { token } });
+      socket.on('order.status_changed', (e) => {
+        if (e.status === 'SENT') toast(`새 주문: ${e.order.plateNumber}`);
+        if (e.status === 'CANCELLED') toast(`주문 취소: ${e.order.plateNumber}`);
+        refresh();
+      });
+      socket.on('eta.updated', (e) => {
+        const o = orders.find((x) => x.id === e.orderId);
+        if (o) { o.arrivalAt = e.arrivalAt; o.etaSec = e.etaSec; }
+      });
+      socket.on('order.delayed', (e) => {
+        delayed.set(e.orderId, e.delaySec);
+        const o = orders.find((x) => x.id === e.orderId);
+        if (o) { o.arrivalAt = e.arrivalAt; toast(`${o.plateNumber} 도착 ${Math.round(e.delaySec / 60)}분 지연`); }
+        render();
+      });
+      socket.on('order.lane_entered', (e) => {
+        toast(`${e.plateNumber} 차로 진입, 마무리 제조를 시작하세요`);
+        refresh();
+      });
+    }
+
+    async function start() {
+      $('login').hidden = true;
+      $('app').hidden = false;
+      try {
+        await refresh();
+        connect();
+      } catch (e) { toast(e.message); }
+    }
+
+    function logout() {
+      token = null;
+      localStorage.removeItem('pickme.staffToken');
+      socket?.disconnect();
+      $('app').hidden = true;
+      $('login').hidden = false;
+    }
+
+    $('loginBtn').onclick = async () => {
+      $('loginError').textContent = '';
+      try {
+        const res = await api('/store-auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ loginId: $('loginId').value.trim(), password: $('password').value }),
+        });
+        token = res.accessToken;
+        localStorage.setItem('pickme.staffToken', token);
+        start();
+      } catch (e) { $('loginError').textContent = e.message; }
+    };
+    $('password').onkeydown = (e) => e.key === 'Enter' && $('loginBtn').click();
+    $('logoutBtn').onclick = logout;
+    $('pickupBtn').onclick = async () => {
+      const plateNumber = $('plate').value.trim();
+      if (!plateNumber) return;
+      try {
+        await api('/store/pickup', { method: 'POST', body: JSON.stringify({ plateNumber }) });
+        $('plate').value = '';
+        toast(`${plateNumber} 수령 완료`);
+        await refresh();
+      } catch (e) { toast(e.message); }
+    };
+
+    // 도착까지 남은 시간 카운트다운
+    setInterval(() => {
+      for (const el of document.querySelectorAll('.eta[data-order-id]')) {
+        const o = orders.find((x) => x.id === el.dataset.orderId);
+        if (o) el.innerHTML = etaText(o);
+      }
+    }, 1000);
+
+    token ? start() : logout();
+  </script>
+</body>
+</html>

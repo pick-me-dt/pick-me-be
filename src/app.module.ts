@@ -5,6 +5,8 @@ import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health.controller';
 import { OrdersModule } from './orders/orders.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RealtimeModule } from './realtime/realtime.module';
+import { StoreDashboardModule } from './store-dashboard/store-dashboard.module';
 import { StoresModule } from './stores/stores.module';
 import { TimingModule } from './timing/timing.module';
 import { UsersModule } from './users/users.module';
@@ -19,6 +21,8 @@ import { UsersModule } from './users/users.module';
     StoresModule,
     OrdersModule,
     TimingModule,
+    RealtimeModule,
+    StoreDashboardModule,
   ],
   controllers: [HealthController],
 })

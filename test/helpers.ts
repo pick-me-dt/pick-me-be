@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -10,7 +11,7 @@ export async function createTestApp(): Promise<INestApplication> {
   // 스위퍼는 끄고, 테스트가 TimingEngine.evaluate(now)를 직접 불러 시간을 다룬다
   process.env.TIMING_SWEEP_MS = '0';
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication();
+  const app = moduleRef.createNestApplication<NestExpressApplication>();
   configureApp(app);
   await app.init();
   const prisma = app.get(PrismaService);
