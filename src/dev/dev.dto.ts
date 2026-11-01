@@ -69,6 +69,19 @@ export class DemoRunDto extends TripOptionsDto {
   queueCars?: number;
 }
 
+export class RelocateStoresDto {
+  /** 이 좌표 북쪽으로 0.8km · 2.5km · 5km 지점에 시드 매장 3곳을 옮긴다 */
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat: number;
+
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng: number;
+}
+
 export class SetQueueDto {
   @IsInt()
   @Min(0)
