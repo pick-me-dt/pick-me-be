@@ -7,7 +7,8 @@ import { TokenService } from '../auth/token.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { seed, SEED } from '../seed/seed';
 import { DevRoutesGuard } from './dev.guard';
-import { DemoRunDto, SetQueueDto, SimulateTripDto } from './dev.dto';
+import { DevFixturesService } from './dev-fixtures.service';
+import { DemoRunDto, RelocateStoresDto, SetQueueDto, SimulateTripDto } from './dev.dto';
 import { SimulatorService } from './simulator.service';
 
 /** 개발·시연용. ENABLE_DEV_ROUTES=true일 때만 열린다 */
@@ -21,7 +22,42 @@ export class DevController {
     private readonly simulator: SimulatorService,
     private readonly orders: OrdersService,
     private readonly tokens: TokenService,
+    private readonly fixtures: DevFixturesService,
   ) {}
+
+  @Post('tokens')
+  @HttpCode(200)
+  @ApiOperation({ summary: '시드 계정 토큰 발급', description: '시연 차량 운전자 토큰과 매장별 직원 토큰. Swagger Authorize나 Postman에 바로 넣어 쓴다.' })
+  tokensForSeed() {
+    return this.fixtures.tokensForSeed();
+  }
+
+  @Post('reset')
+  @HttpCode(200)
+  @ApiOperation({ summary: '목데이터 초기화', description: '진행 중 주문 취소, 시뮬레이션 중지, 목업 DT 대기 초기화, 시드 데이터(매장 위치 포함) 복구.' })
+  reset() {
+    return this.fixtures.reset();
+  }
+
+  @Post('stores/relocate')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '시드 매장을 내 위치 근처로 옮기기',
+    description: '에뮬레이터 GPS가 한국이 아니어도 매장 검색이 되도록, 기준점 북쪽 0.8km · 2.5km · 5km에 매장 3곳을 둔다. reset으로 원래 위치로 돌아간다.',
+  })
+  relocateStores(@Body() dto: RelocateStoresDto) {
+    return this.fixtures.relocateStores(dto.lat, dto.lng);
+  }
+
+  @Post('orders/:id/advance')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '주문을 다음 단계로',
+    description: 'NEEDS_CONFIRMATION → RESERVED → SENT → PREPARING → READY → PICKED_UP. 매장 대시보드 없이 차량 앱 상태 화면을 확인할 때.',
+  })
+  advance(@Param('id', ParseUUIDPipe) id: string) {
+    return this.fixtures.advance(id);
+  }
 
   @Post('seed')
   @HttpCode(200)

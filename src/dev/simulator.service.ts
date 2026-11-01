@@ -102,7 +102,13 @@ export class SimulatorService implements OnModuleDestroy {
     return [...this.running.values()].map(({ orderId, options, lastPoint }) => ({ orderId, options, lastPoint }));
   }
 
+  stopAll() {
+    const ids = [...this.running.keys()];
+    for (const id of ids) this.stop(id);
+    return ids.length;
+  }
+
   onModuleDestroy() {
-    for (const id of [...this.running.keys()]) this.stop(id);
+    this.stopAll();
   }
 }

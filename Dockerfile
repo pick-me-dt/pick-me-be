@@ -15,4 +15,5 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/public ./public
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+# 마이그레이션 → 목데이터(여러 번 실행해도 같음) → 서버
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/seed/run.js && node dist/main"]

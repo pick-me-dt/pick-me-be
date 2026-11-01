@@ -45,4 +45,9 @@ export class MockDtAdapter implements ChannelAdapter {
   setQueue(storeId: string, cars: number) {
     this.queues.set(storeId, cars);
   }
+
+  /** 시연용: 모든 매장 대기 차량 수를 기본값으로 */
+  resetQueues() {
+    this.queues.clear();
+  }
 }

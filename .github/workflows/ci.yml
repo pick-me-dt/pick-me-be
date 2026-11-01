@@ -38,3 +38,19 @@ jobs:
       - run: npm test -- --passWithNoTests
       - run: npm run test:e2e -- --passWithNoTests
       - run: npm run build
+
+  # FE 로컬 개발 환경(docker compose)이 실제로 뜨는지 확인한다
+  local-stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up --build -d --wait
+      - name: 목데이터·문서·대시보드 확인
+        run: |
+          curl -fsS localhost:3000/v1/health
+          curl -fsS -X POST localhost:3000/v1/dev/tokens | grep -q '"driver"'
+          curl -fsS localhost:3000/docs-json | grep -q '"/v1/orders"'
+          curl -fsS localhost:3000/dashboard/ | grep -q '픽미 매장 대시보드'
+      - if: failure()
+        run: docker compose logs
+      - run: docker compose down -v

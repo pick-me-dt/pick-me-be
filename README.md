@@ -19,6 +19,14 @@ Pleos Connect SDK(NaviHelper, Vehicle, FusedLocation, Gleo)는 차량 앱(Androi
 
 ## 로컬 실행
 
+**FE(차량 앱·대시보드) 개발자**는 Docker만 있으면 됩니다. 명령 한 번으로 DB, 마이그레이션, 목데이터, 서버가 뜹니다. 접속 주소, 개발용 토큰, 목데이터 시나리오는 [FE 로컬 개발 가이드](docs/LOCAL_DEV.md)를 보세요.
+
+```bash
+docker compose up --build -d --wait
+```
+
+**BE 개발자**는 DB만 Docker로 띄우고 서버는 watch 모드로 실행합니다.
+
 ```bash
 cp .env.example .env
 docker compose up -d postgres
@@ -74,9 +82,10 @@ npm run start:dev
 | --- | --- |
 | 매장 | 픽미 DT 양재점 · 판교점 · 정자점 |
 | 매장 직원 | `yangjae` · `pangyo` · `jeongja` / `pickme1234` |
-| 메뉴 | 아메리카노 4,500 · 카페라떼 5,000 · 바닐라라떼 5,500 · 콜드브루 5,000 · 햄치즈 샌드위치 6,500 |
+| 메뉴 | 아메리카노 · 아이스 아메리카노 4,500 · 카페라떼 · 콜드브루 5,000 · 바닐라라떼 · 녹차라떼 5,500 · 햄치즈 샌드위치 6,500 |
 | 시연 차량 | 기기 ID `emulator-001`, 차량번호 `12가3456` |
-| 자주 주문 메뉴 | "평소 그거" = 아메리카노 한 잔 |
+| 자주 주문 메뉴 | "평소 그거"(아메리카노 한 잔), "출근길 세트"(카페라떼 + 샌드위치) |
+| 지난 주문 | 어제 판교점 수령, 3일 전 양재점 수령, 5일 전 정자점 미수령 취소 |
 
 ## 핵심 동작
 
@@ -149,6 +158,10 @@ Gleo App Schema의 주문 예약·취소·상태 조회 함수는 각각 `POST /
 | `POST /dev/simulate/trip` | 기존 주문에 주행 시뮬레이션 `{ orderId, ...옵션 }` |
 | `GET /dev/simulate` · `DELETE /dev/simulate/:orderId` | 실행 중 시뮬레이션 조회·중지 |
 | `POST /dev/mock-dt/stores/:id/queue` | 목업 DT 대기 차량 수 `{ cars }` |
+| `POST /dev/tokens` | 시드 차량 운전자 토큰, 매장별 직원 토큰 |
+| `POST /dev/reset` | 진행 중 주문 취소, 시뮬레이션 중지, 대기·매장 위치·목데이터 복구 |
+| `POST /dev/stores/relocate` | 시드 매장을 기준점 근처로 옮기기 `{ lat, lng }` |
+| `POST /dev/orders/:id/advance` | 주문을 다음 단계로 (매장 대시보드 없이 상태 화면 확인) |
 | `POST /dev/seed` | 시드 데이터 다시 넣기 |
 
 ### WebSocket (Socket.IO)

@@ -1,3 +1,5 @@
+# FE 로컬 개발용: `docker compose up --build` 한 번으로 DB, 마이그레이션, 목데이터, 서버가 뜬다.
+# 자세한 사용법은 docs/LOCAL_DEV.md
 services:
   postgres:
     image: postgres:16
@@ -6,18 +8,34 @@ services:
       POSTGRES_PASSWORD: pickme
       POSTGRES_DB: pickme
     ports:
-      - "5432:5432"
+      # 로컬에 이미 Postgres가 있으면 DB_PORT=5433 처럼 바꾼다
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pickme -d pickme"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   api:
     build: .
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://pickme:pickme@postgres:5432/pickme?schema=public
-      JWT_SECRET: change-me
+      JWT_SECRET: local-dev-secret
       ENABLE_DEV_ROUTES: "true"
+      TIMING_SWEEP_MS: "5000"
     ports:
-      - "3000:3000"
+      - "${API_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
 volumes:
   pgdata:
