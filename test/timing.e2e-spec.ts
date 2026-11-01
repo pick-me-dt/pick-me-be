@@ -165,3 +165,38 @@ describe('타이밍 엔진', () => {
     expect(res.body[0]).toMatchObject({ id: SEED.stores.pangyo, queueCars: 3, queueWaitSec: 180 });
   });
 });
+
+describe('타이밍 엔진 동시 평가', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    app.get(MockDtAdapter).setQueue(SEED.stores.pangyo, 0);
+  });
+
+  afterAll(() => app.close());
+
+  it('평가 중에 들어온 텔레메트리도 버리지 않고 반영한다', async () => {
+    const engine = app.get(TimingEngine);
+    const prisma = app.get(PrismaService);
+    const d = await newDriver(app);
+    const auth = { Authorization: `Bearer ${d.token}` };
+    const res = await request(app.getHttpServer())
+      .post('/v1/orders')
+      .set(auth)
+      .send({ storeId: SEED.stores.pangyo, source: 'SCREEN', items: [{ menuItemId: SEED.menu.americano, qty: 1 }] })
+      .expect(201);
+    const orderId = res.body.order.id;
+
+    // 스위퍼가 텔레메트리 없이 평가를 시작한 사이에 ETA 0이 들어오는 상황
+    const sweeping = engine.evaluate(orderId);
+    await request(app.getHttpServer())
+      .post(`/v1/orders/${orderId}/telemetry`)
+      .set(auth)
+      .send({ lat: 37.396, lng: 127.111, speedKmh: 30, etaSec: 0 })
+      .expect(200);
+    await sweeping;
+
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('SENT');
+  });
+});
