@@ -12,36 +12,49 @@
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
     body { margin: 0; font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; background: var(--bg); color: var(--ink); }
-    header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; background: var(--card); border-bottom: 1px solid var(--line); }
+    header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 24px; background: var(--card); border-bottom: 1px solid var(--line); }
     header h1 { font-size: 18px; margin: 0; }
-    header .queue { color: var(--quiet); }
+    header .settings { display: flex; gap: 8px; align-items: center; color: var(--quiet); font-size: 14px; }
+    header .settings input { width: 64px; }
     header .spacer { flex: 1; }
-    main { padding: 24px; max-width: 1200px; margin: 0 auto; }
-    button { font: inherit; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+    main { padding: 20px 24px; }
+    button { font: inherit; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
     button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
     button.danger { color: var(--bad); }
-    input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+    input, select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
     .login { max-width: 320px; margin: 80px auto; display: grid; gap: 12px; background: var(--card); padding: 24px; border-radius: 12px; border: 1px solid var(--line); }
     .login h2 { margin: 0 0 4px; font-size: 18px; }
     .error { color: var(--bad); font-size: 14px; min-height: 1em; }
-    .pickup { display: flex; gap: 8px; margin-bottom: 20px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 10px; }
-    .card.lane { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37, 99, 235, .15); }
-    .plate { font-size: 24px; font-weight: 700; letter-spacing: .5px; }
-    .eta { font-size: 15px; }
-    .eta strong { font-size: 20px; }
-    .items { color: var(--quiet); font-size: 14px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .board { display: grid; grid-template-columns: repeat(5, minmax(220px, 1fr)); gap: 14px; align-items: start; }
+    @media (max-width: 1200px) { .board { grid-template-columns: repeat(2, minmax(220px, 1fr)); } }
+    @media (max-width: 640px) { .board { grid-template-columns: 1fr; } main { padding: 16px; } }
+    .column h2 { font-size: 14px; margin: 0 0 10px; color: var(--quiet); display: flex; justify-content: space-between; }
+    .column .list { display: grid; gap: 10px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 8px; }
+    .card.emphasize { border-color: var(--warn); box-shadow: 0 0 0 3px rgba(217, 119, 6, .2); }
+    .card.lane { border-color: var(--accent); }
+    .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .orderNo { font-size: 22px; font-weight: 700; }
+    .plate { color: var(--quiet); font-size: 14px; }
+    .items { font-size: 14px; }
+    .rows { display: grid; gap: 2px; font-size: 13px; color: var(--quiet); }
+    .rows strong { color: var(--ink); }
+    .rec { font-size: 15px; }
+    .rec strong { font-size: 18px; }
+    .rec.due strong { color: var(--warn); }
     .badges { display: flex; gap: 6px; flex-wrap: wrap; }
     .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eef1f6; }
-    .badge.SENT { background: #e8efff; color: var(--accent); }
-    .badge.PREPARING { background: #fff4e5; color: var(--warn); }
-    .badge.READY { background: #e7f7ec; color: var(--good); }
-    .badge.delay { background: #fdecec; color: var(--bad); }
-    .badge.lane { background: var(--accent); color: #fff; }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .empty { color: var(--quiet); text-align: center; padding: 48px 0; }
-    .toast { position: fixed; right: 24px; bottom: 24px; background: var(--ink); color: #fff; padding: 12px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; }
+    .badge.warn { background: #fff4e5; color: var(--warn); }
+    .badge.bad { background: #fdecec; color: var(--bad); }
+    .badge.info { background: #e8efff; color: var(--accent); }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .empty { color: var(--quiet); font-size: 13px; padding: 12px 0; }
+    dialog { border: 1px solid var(--line); border-radius: 12px; padding: 20px; max-width: 360px; width: 90vw; }
+    dialog h3 { margin: 0 0 12px; font-size: 16px; }
+    dialog .menu { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
+    dialog label { display: flex; justify-content: space-between; gap: 8px; }
+    .toast { position: fixed; right: 24px; bottom: 24px; background: var(--ink); color: #fff; padding: 12px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; max-width: 80vw; }
     .toast.show { opacity: 1; }
   </style>
 </head>
@@ -57,34 +70,49 @@
   <div id="app" hidden>
     <header>
       <h1 id="storeName">매장</h1>
-      <span class="queue" id="queue"></span>
+      <div class="settings">
+        준비 <input id="prepMin" type="number" min="0" step="0.5"> 분
+        · 입구 이후 <input id="afterMin" type="number" min="0" step="0.5"> 분
+        <button id="saveSettings">저장</button>
+      </div>
       <span class="spacer"></span>
+      <button id="menuBtn">품절 관리</button>
       <button id="logoutBtn">로그아웃</button>
     </header>
     <main>
-      <div class="pickup">
-        <input id="plate" placeholder="차량번호로 수령 처리 (예: 12가3456)">
+      <div class="toolbar">
+        <input id="plate" placeholder="차량번호로 찾아 수령 완료 (예: 12가3456)">
         <button id="pickupBtn" class="primary">수령 완료</button>
       </div>
-      <div id="orders" class="grid"></div>
+      <div class="board" id="board"></div>
     </main>
   </div>
+
+  <dialog id="menuDialog">
+    <h3>품절 관리</h3>
+    <div class="menu" id="menuList"></div>
+    <p><button id="menuClose">닫기</button></p>
+  </dialog>
 
   <div id="toast" class="toast"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const STATUS_LABEL = { SENT: '접수 대기', PREPARING: '제조 중', READY: '준비 완료' };
-    const NEXT_ACTION = {
-      SENT: { status: 'PREPARING', label: '제조 시작' },
-      PREPARING: { status: 'READY', label: '준비 완료' },
-      READY: { status: 'PICKED_UP', label: '수령 완료' },
-    };
+    const COLUMNS = [
+      { key: 'PENDING_ACCEPT', title: '매장 확인 중' },
+      { key: 'ACCEPTED', title: '제조 대기' },
+      { key: 'PREPARING', title: '제조 중' },
+      { key: 'READY', title: '준비 완료' },
+      { key: 'CANCEL_REQUESTED', title: '취소 확인 중' },
+    ];
+    const REJECT_REASONS = { SOLD_OUT: '품절', BUSY: '주문이 많음', CLOSED: '영업 종료', OTHER: '기타' };
+    /** 시작 추천이 바뀐 주문을 강조하는 시간 */
+    const EMPHASIS_MS = 60_000;
+
     let token = localStorage.getItem('pickme.staffToken');
     let orders = [];
-    const delayed = new Map(); // orderId → 지연(초)
+    const emphasized = new Map(); // orderId → 강조 끝나는 시각
     let socket;
-
     const $ = (id) => document.getElementById(id);
 
     async function api(path, options = {}) {
@@ -103,122 +131,206 @@
       el.textContent = text;
       el.classList.add('show');
       clearTimeout(toast.timer);
-      toast.timer = setTimeout(() => el.classList.remove('show'), 3000);
+      toast.timer = setTimeout(() => el.classList.remove('show'), 4000);
     }
 
-    function etaText(o) {
-      if (o.laneEnteredAt) return '차로 진입';
-      if (!o.arrivalAt) return '도착 시간 확인 중';
-      const sec = Math.max(0, Math.round((new Date(o.arrivalAt) - Date.now()) / 1000));
-      if (sec === 0) return '곧 도착';
-      return `<strong>${Math.floor(sec / 60)}분 ${String(sec % 60).padStart(2, '0')}초</strong> 후 도착`;
+    const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-');
+    const clockSec = (iso) => (iso ? new Date(iso).toLocaleTimeString('ko-KR') : '-');
+    function remain(iso) {
+      const sec = Math.round((new Date(iso) - Date.now()) / 1000);
+      const abs = Math.abs(sec);
+      const text = `${Math.floor(abs / 60)}분 ${String(abs % 60).padStart(2, '0')}초`;
+      return sec >= 0 ? `${text} 후` : `${text} 지남`;
     }
 
-    function render() {
-      const list = $('orders');
-      list.replaceChildren();
-      if (orders.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'empty';
-        empty.textContent = '들어올 주문이 없습니다';
-        list.append(empty);
-        return;
-      }
-      for (const o of orders) {
-        const card = document.createElement('div');
-        card.className = 'card' + (o.laneEnteredAt ? ' lane' : '');
-
-        const plate = document.createElement('div');
-        plate.className = 'plate';
-        plate.textContent = o.plateNumber;
-
-        const eta = document.createElement('div');
-        eta.className = 'eta';
-        eta.dataset.orderId = o.id;
-        eta.innerHTML = etaText(o);
-
-        const items = document.createElement('div');
-        items.className = 'items';
-        items.textContent = o.items.map((i) => `${i.name} × ${i.qty}`).join(', ');
-
-        const badges = document.createElement('div');
-        badges.className = 'badges';
-        const addBadge = (cls, text) => {
-          const b = document.createElement('span');
-          b.className = `badge ${cls}`;
-          b.textContent = text;
-          badges.append(b);
-        };
-        addBadge(o.status, STATUS_LABEL[o.status] ?? o.status);
-        if (o.laneEnteredAt) addBadge('lane', '차로 진입');
-        const delaySec = Math.max(delayed.get(o.id) ?? 0, o.delaySec ?? 0);
-        if (delaySec >= 120) addBadge('delay', `${Math.round(delaySec / 60)}분 지연`);
-
-        const actions = document.createElement('div');
-        actions.className = 'actions';
-        const next = NEXT_ACTION[o.status];
-        if (next) actions.append(button(next.label, 'primary', () => update(o.id, next.status)));
-        actions.append(button('취소', 'danger', () => confirm(`${o.plateNumber} 주문을 취소할까요?`) && update(o.id, 'CANCELLED')));
-
-        card.append(plate, eta, items, badges, actions);
-        list.append(card);
-      }
+    function el(tag, cls, text) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
     }
-
     function button(label, cls, onClick) {
-      const b = document.createElement('button');
-      b.className = cls;
-      b.textContent = label;
+      const b = el('button', cls, label);
       b.onclick = onClick;
       return b;
     }
 
-    async function update(orderId, status) {
+    function card(o) {
+      const t = o.timing;
+      const c = el('div', 'card');
+      if ((emphasized.get(o.id) ?? 0) > Date.now()) c.classList.add('emphasize');
+      if (o.laneEnteredAt) c.classList.add('lane');
+
+      const head = el('div', 'head');
+      head.append(el('span', 'orderNo', o.orderNo ?? '-'), el('span', 'plate', o.plateNumber));
+      c.append(head, el('div', 'items', o.items.map((i) => `${i.name} × ${i.qty}`).join(', ')));
+
+      // 제조 전: 시작 추천 시각이 핵심. 제조 후: 예상 수령과 지연
+      const beforePrep = ['PENDING_ACCEPT', 'ACCEPTED'].includes(o.status);
+      if (beforePrep && t.recommendedStartAt) {
+        const rec = el('div', 'rec' + (new Date(t.recommendedStartAt) <= Date.now() ? ' due' : ''));
+        rec.append('제조 시작 추천 ', el('strong', null, clock(t.recommendedStartAt)));
+        rec.append(el('span', 'countdown', ` (${remain(t.recommendedStartAt)})`));
+        rec.dataset.rec = t.recommendedStartAt;
+        c.append(rec);
+      }
+      const rows = el('div', 'rows');
+      const row = (label, value) => {
+        const r = el('div');
+        r.append(`${label} `, el('strong', null, value));
+        rows.append(r);
+      };
+      row('예상 수령', t.expectedPickupAt ? clock(t.expectedPickupAt) : '도착 정보 없음');
+      if (o.laneEnteredAt) row('입구', `진입 ${clock(o.laneEnteredAt)}`);
+      else if (t.entranceArrivalAt) row('입구 도착', `${clock(t.entranceArrivalAt)}`);
+      if (t.etaUpdatedAt) row('ETA 갱신', clockSec(t.etaUpdatedAt));
+      c.append(rows);
+
+      const badges = el('div', 'badges');
+      if (t.etaStale) badges.append(el('span', 'badge bad', 'ETA 끊김 · 추천 보류'));
+      if (o.acceptOverdue) badges.append(el('span', 'badge warn', '응답 지연'));
+      if (t.delaySec >= 60) badges.append(el('span', 'badge bad', `${Math.round(t.delaySec / 60)}분 지연`));
+      if ((emphasized.get(o.id) ?? 0) > Date.now()) badges.append(el('span', 'badge warn', '추천 변경'));
+      if (o.laneEnteredAt) badges.append(el('span', 'badge info', '차로 진입'));
+      if (o.cancelRequest) badges.append(el('span', 'badge warn', `취소 요청${o.cancelRequest.note ? ` · ${o.cancelRequest.note}` : ''}`));
+      if (badges.childElementCount) c.append(badges);
+
+      const actions = el('div', 'actions');
+      const act = (label, cls, path, body) =>
+        actions.append(button(label, cls, () => run(`/store/orders/${o.id}/${path}`, body)));
+      switch (o.status) {
+        case 'PENDING_ACCEPT':
+          act('수락', 'primary', 'accept');
+          actions.append(button('거절', 'danger', () => reject(o)));
+          break;
+        case 'ACCEPTED':
+          act('제조 시작', 'primary', 'start');
+          break;
+        case 'PREPARING':
+          act('준비 완료', 'primary', 'ready');
+          break;
+        case 'READY':
+          act('수령 완료', 'primary', 'pickup');
+          break;
+        case 'CANCEL_REQUESTED':
+          act('취소 승인', 'danger', 'cancel-request/approve', {});
+          act('취소 거절', '', 'cancel-request/reject', {});
+          break;
+      }
+      if (!o.laneEnteredAt && o.status !== 'CANCEL_REQUESTED') act('차로 진입 확인', '', 'lane-entered');
+      // 매장 확인 중에는 거절로 끝내고, 수락한 뒤에만 미수령·매장 사정으로 종료한다
+      if (!['PENDING_ACCEPT', 'CANCEL_REQUESTED'].includes(o.status)) {
+        actions.append(button('주문 종료', 'danger', () => storeCancel(o)));
+      }
+      c.append(actions);
+      return c;
+    }
+
+    function render() {
+      const board = $('board');
+      board.replaceChildren();
+      for (const col of COLUMNS) {
+        const items = orders.filter((o) => o.status === col.key);
+        const section = el('section', 'column');
+        const h = el('h2');
+        h.append(el('span', null, col.title), el('span', null, String(items.length)));
+        const list = el('div', 'list');
+        if (items.length === 0) list.append(el('div', 'empty', '없음'));
+        items.forEach((o) => list.append(card(o)));
+        section.append(h, list);
+        board.append(section);
+      }
+    }
+
+    async function run(path, body) {
       try {
-        await api(`/store/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+        await api(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
         await refresh();
       } catch (e) { toast(e.message); }
+    }
+
+    function reject(o) {
+      const choice = prompt(`${o.orderNo} 거절 사유를 입력하세요\n${Object.entries(REJECT_REASONS).map(([k, v]) => `${k}: ${v}`).join('\n')}`, 'SOLD_OUT');
+      if (!choice) return;
+      const reason = choice.trim().toUpperCase();
+      if (!REJECT_REASONS[reason]) return toast('사유 코드를 확인해 주세요');
+      run(`/store/orders/${o.id}/reject`, { reason });
+    }
+
+    function storeCancel(o) {
+      const noShow = confirm(`${o.orderNo} 주문을 종료합니다.\n확인: 미수령으로 종료\n취소: 매장 사정으로 종료하려면 다음 창에서 확인`);
+      if (noShow) return run(`/store/orders/${o.id}/cancel`, { reason: 'NO_SHOW' });
+      if (confirm(`${o.orderNo} 주문을 매장 사정으로 종료할까요?`)) run(`/store/orders/${o.id}/cancel`, { reason: 'STORE' });
     }
 
     async function refresh() {
       const [overview, list] = await Promise.all([api('/store'), api('/store/orders')]);
       $('storeName').textContent = overview.store.name;
-      $('queue').textContent = `DT 대기 ${overview.queue.cars}대`;
+      if (document.activeElement !== $('prepMin')) $('prepMin').value = overview.settings.prepSec / 60;
+      if (document.activeElement !== $('afterMin')) $('afterMin').value = overview.settings.afterEntrySec / 60;
       orders = list;
       render();
+    }
+
+    function patchTiming(orderId, timing) {
+      const o = orders.find((x) => x.id === orderId);
+      if (o && timing) { o.timing = timing; render(); }
     }
 
     function connect() {
       socket?.disconnect();
       socket = io('/ws/store', { auth: { token } });
       socket.on('order.status_changed', (e) => {
-        if (e.status === 'SENT') toast(`새 주문: ${e.order.plateNumber}`);
-        if (e.status === 'CANCELLED') toast(`주문 취소: ${e.order.plateNumber}`);
+        const o = e.order;
+        if (e.status === 'PENDING_ACCEPT') toast(`새 주문 ${o.orderNo} · ${o.plateNumber}`);
+        if (e.status === 'CANCEL_REQUESTED') toast(`${o.orderNo} 취소 요청`);
         refresh();
       });
-      socket.on('eta.updated', (e) => {
+      socket.on('eta.updated', (e) => patchTiming(e.orderId, e.timing));
+      socket.on('order.recommendation_changed', (e) => {
+        emphasized.set(e.orderId, Date.now() + EMPHASIS_MS);
         const o = orders.find((x) => x.id === e.orderId);
-        if (o) { o.arrivalAt = e.arrivalAt; o.etaSec = e.etaSec; }
+        const min = Math.round(Math.abs(e.deltaSec) / 60);
+        toast(`${o?.orderNo ?? ''} 제조 시작 추천 ${min}분 ${e.deltaSec > 0 ? '늦춤' : '앞당김'} → ${clock(e.recommendedStartAt)}`);
+        patchTiming(e.orderId, e.timing);
       });
       socket.on('order.delayed', (e) => {
-        delayed.set(e.orderId, e.delaySec);
         const o = orders.find((x) => x.id === e.orderId);
-        if (o) { o.arrivalAt = e.arrivalAt; toast(`${o.plateNumber} 도착 ${Math.round(e.delaySec / 60)}분 지연`); }
-        render();
+        toast(`${o?.orderNo ?? ''} 도착 ${Math.round(e.delaySec / 60)}분 지연 · 예상 수령 ${clock(e.expectedPickupAt)}`);
+        patchTiming(e.orderId, e.timing);
       });
+      socket.on('order.accept_overdue', () => refresh());
       socket.on('order.lane_entered', (e) => {
-        toast(`${e.plateNumber} 차로 진입, 마무리 제조를 시작하세요`);
+        toast(`${e.orderNo} · ${e.plateNumber} 차로 진입`);
         refresh();
       });
+      socket.on('connect', () => refresh().catch(() => undefined));
+    }
+
+    async function openMenu() {
+      const items = await api('/store/menu');
+      const list = $('menuList');
+      list.replaceChildren();
+      for (const m of items) {
+        const label = el('label');
+        const box = el('input');
+        box.type = 'checkbox';
+        box.checked = m.soldOut;
+        box.onchange = async () => {
+          try { await api(`/store/menu/${m.id}`, { method: 'PATCH', body: JSON.stringify({ soldOut: box.checked }) }); }
+          catch (e) { box.checked = !box.checked; toast(e.message); }
+        };
+        label.append(el('span', null, `${m.name} ${m.price.toLocaleString('ko-KR')}원`), el('span', null, '품절 '));
+        label.lastChild.append(box);
+        list.append(label);
+      }
+      $('menuDialog').showModal();
     }
 
     async function start() {
       $('login').hidden = true;
       $('app').hidden = false;
-      try {
-        await refresh();
-        connect();
-      } catch (e) { toast(e.message); }
+      try { await refresh(); connect(); } catch (e) { toast(e.message); }
     }
 
     function logout() {
@@ -243,24 +355,43 @@
     };
     $('password').onkeydown = (e) => e.key === 'Enter' && $('loginBtn').click();
     $('logoutBtn').onclick = logout;
+    $('menuBtn').onclick = () => openMenu().catch((e) => toast(e.message));
+    $('menuClose').onclick = () => $('menuDialog').close();
+    $('saveSettings').onclick = async () => {
+      try {
+        await api('/store/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            prepSec: Math.round(Number($('prepMin').value) * 60),
+            afterEntrySec: Math.round(Number($('afterMin').value) * 60),
+          }),
+        });
+        toast('준비 시간·입구 이후 시간을 저장했어요');
+        await refresh();
+      } catch (e) { toast(e.message); }
+    };
     $('pickupBtn').onclick = async () => {
       const plateNumber = $('plate').value.trim();
       if (!plateNumber) return;
       try {
-        await api('/store/pickup', { method: 'POST', body: JSON.stringify({ plateNumber }) });
+        const o = await api('/store/pickup', { method: 'POST', body: JSON.stringify({ plateNumber }) });
         $('plate').value = '';
-        toast(`${plateNumber} 수령 완료`);
+        toast(`${o.orderNo} 수령 완료`);
         await refresh();
       } catch (e) { toast(e.message); }
     };
 
-    // 도착까지 남은 시간 카운트다운
+    // 시작 추천까지 남은 시간
     setInterval(() => {
-      for (const el of document.querySelectorAll('.eta[data-order-id]')) {
-        const o = orders.find((x) => x.id === el.dataset.orderId);
-        if (o) el.innerHTML = etaText(o);
+      for (const rec of document.querySelectorAll('.rec[data-rec]')) {
+        rec.querySelector('.countdown').textContent = ` (${remain(rec.dataset.rec)})`;
+        rec.classList.toggle('due', new Date(rec.dataset.rec) <= Date.now());
       }
     }, 1000);
+    // 강조가 끝나면 다시 그린다
+    setInterval(() => {
+      for (const [id, until] of emphasized) if (until <= Date.now()) { emphasized.delete(id); render(); }
+    }, 5000);
 
     token ? start() : logout();
   </script>

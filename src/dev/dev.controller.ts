@@ -34,7 +34,10 @@ export class DevController {
 
   @Post('reset')
   @HttpCode(200)
-  @ApiOperation({ summary: '목데이터 초기화', description: '진행 중 주문 취소, 시뮬레이션 중지, 목업 DT 대기 초기화, 시드 데이터(매장 위치 포함) 복구.' })
+  @ApiOperation({
+    summary: '목데이터 초기화',
+    description: '진행 중 주문 취소, 시뮬레이션 중지, 시드 데이터(매장 위치·준비 시간·입구 이후 시간·품절) 복구. 양재 DT점 다음 주문번호를 P-021로 맞춘다.',
+  })
   reset() {
     return this.fixtures.reset();
   }
@@ -53,7 +56,8 @@ export class DevController {
   @HttpCode(200)
   @ApiOperation({
     summary: '주문을 다음 단계로',
-    description: 'NEEDS_CONFIRMATION → RESERVED → SENT → PREPARING → READY → PICKED_UP. 매장 대시보드 없이 차량 앱 상태 화면을 확인할 때.',
+    description:
+      'PENDING_ACCEPT → ACCEPTED → PREPARING → READY → PICKED_UP, CANCEL_REQUESTED는 승인. 매장 대시보드 없이 차량 앱 상태 화면을 확인할 때.',
   })
   advance(@Param('id', ParseUUIDPipe) id: string) {
     return this.fixtures.advance(id);
@@ -96,30 +100,30 @@ export class DevController {
   }
 
   /**
-   * 시연 한 번에 실행: 시연 차량의 진행 중 주문을 정리하고, "평소 그거"를 음성으로 주문한 뒤 주행을 시작한다.
-   * 기본값은 10분 거리, 10배속, 매장 대기 0대. 이때 주문은 도착 2분쯤 전에 매장으로 전송되므로,
-   * 지연 알림이 보이도록 전송 뒤인 도착 40초 전 지점에 5분 정체를 넣는다.
-   * 엔진은 실제 시계로 지연을 재므로, 배속 중에는 표시되는 지연이 정체 시간보다 짧다.
+   * 2차 기획 시연을 한 번에 실행한다: 시연 차량의 진행 중 주문을 정리하고, 양재 DT점에 "평소 그거"(아이스 아메리카노)를
+   * 화면 예약해 P-021로 매장에 공유한 뒤, NaviHelper처럼 30초마다 ETA를 보낸다.
+   * 기본값은 입구까지 5분, 3분 남았을 때 1분 30초 정체(제조 전이라 시작 추천이 늦춰지고 강조된다).
    */
   @Post('demo-run')
   @HttpCode(200)
   @ApiOperation({
     summary: '시연 한 번에 실행',
-    description: '시연 차량이 "평소 그거"를 음성 주문하고 주행을 시작한다. 주행 → 전송 → 정체 지연 → 차로 진입 → (autoStore면) 준비 완료.',
+    description:
+      '양재 DT점 · 아이스 아메리카노 · P-021. 예약 확정 → 매장 공유 → ETA 30초 갱신 → 정체로 시작 추천 변경 → 입구 도착 시 차로 진입. autoStore면 수락·제조 시작(시작 추천 시각)·준비 완료까지 자동. 실제 시간으로 흐른다.',
   })
   async demoRun(@Body() dto: DemoRunDto) {
-    await seed(this.prisma);
     const stale = await this.prisma.order.findMany({ where: { vehicleId: SEED.vehicleId, status: { in: ACTIVE_STATUSES } } });
-    for (const o of stale) await this.orders.cancel(o.id, 'USER', 'demo-run');
+    for (const o of stale) await this.orders.cancel(o.id, 'DEV_RESET');
+    await seed(this.prisma);
 
+    const { storeId = SEED.stores.yangjae, prepSec, afterEntrySec, ...trip } = dto;
+    if (prepSec !== undefined || afterEntrySec !== undefined) {
+      await this.prisma.store.update({ where: { id: storeId }, data: { prepSec, afterEntrySec } });
+    }
+    await this.orders.setNextOrderNo(storeId, SEED.demoNextOrderNo);
     const driver = { role: 'driver' as const, userId: SEED.userId, vehicleId: SEED.vehicleId };
-    const { storeId = SEED.stores.pangyo, queueCars = 0, ...trip } = dto;
-    this.mockDt.setQueue(storeId, queueCars);
-    const reserved = await this.orders.reserve(driver, { storeId, source: 'VOICE', favoriteId: SEED.favoriteId });
-    const simulation = await this.simulator.start(reserved.order.id, {
-      jam: { atEtaSec: 40, addSec: 300 },
-      ...trip,
-    });
+    const reserved = await this.orders.reserve(driver, { storeId, source: 'SCREEN', favoriteId: SEED.favoriteId });
+    const simulation = await this.simulator.start(reserved.order.id, { jam: { atEtaSec: 180, addSec: 90 }, ...trip });
     return { order: reserved.order, tts: reserved.tts, simulation, driverToken: this.tokens.sign(driver) };
   }
 }

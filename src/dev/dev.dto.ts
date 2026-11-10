@@ -13,21 +13,14 @@ export class JamDto {
 }
 
 export class TripOptionsDto {
-  /** 출발 시점 매장까지 남은 시간(초) */
+  /** 출발 시점 매장 입구까지 남은 시간(초). 실제 시간으로 흐른다 */
   @IsOptional()
   @IsInt()
-  @Min(10)
+  @Min(1)
   @Max(3600)
   startEtaSec?: number;
 
-  /** 배속. 10이면 실제 1초에 시뮬레이션 10초가 흐른다 */
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  @Max(600)
-  speedup?: number;
-
-  /** 시뮬레이션 기준 텔레메트리 간격(초) */
+  /** ETA 전송 간격(초). NaviHelper처럼 기본 30초 */
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -45,7 +38,7 @@ export class TripOptionsDto {
   @Type(() => JamDto)
   jam?: JamDto;
 
-  /** 매장 직원 대신 제조 시작·준비 완료를 자동으로 누른다 */
+  /** 매장 직원 대신 수락·제조 시작(시작 추천 시각)·준비 완료를 자동으로 누른다 */
   @IsOptional()
   @IsBoolean()
   autoStore?: boolean;
@@ -57,16 +50,24 @@ export class SimulateTripDto extends TripOptionsDto {
 }
 
 export class DemoRunDto extends TripOptionsDto {
+  /** 시연 매장. 기본 양재 DT점 */
   @IsOptional()
   @IsUUID()
   storeId?: string;
 
-  /** 시연 매장의 DT 대기 차량 수. 대기가 길면 전송이 차로 진입 직전까지 늦춰진다 */
+  /** 시연 매장 준비 시간(초)을 이 값으로 바꾼다. 기본은 시드값 180 */
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(50)
-  queueCars?: number;
+  @Max(3600)
+  prepSec?: number;
+
+  /** 시연 매장 입구 이후 시간(초)을 이 값으로 바꾼다. 기본은 시드값 120 */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3600)
+  afterEntrySec?: number;
 }
 
 export class RelocateStoresDto {

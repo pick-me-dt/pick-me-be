@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { Store } from '@prisma/client';
 import { ChannelsService } from '../channels/channels.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { queueWaitSec } from '../timing/estimators';
 
 export interface QueueInfo {
   cars: number;
@@ -19,7 +18,7 @@ export class QueueService {
   async forStore(store: Store): Promise<QueueInfo> {
     const channel = await this.channels.forStore(store);
     const { cars } = await channel.getQueue(store);
-    return { cars, waitSec: queueWaitSec(cars, store.serviceSecPerCar) };
+    return { cars, waitSec: cars * store.serviceSecPerCar };
   }
 
   /** DT 차로 진입 기록. 수령 시각은 주문 수령 처리에서 채운다 */

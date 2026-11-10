@@ -1,16 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
-
-export class UpdateStoreOrderDto {
-  @ApiProperty({ enum: ['PREPARING', 'READY', 'PICKED_UP', 'CANCELLED'] })
-  @IsIn(['PREPARING', 'READY', 'PICKED_UP', 'CANCELLED'])
-  status: 'PREPARING' | 'READY' | 'PICKED_UP' | 'CANCELLED';
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  reason?: string;
-}
+import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class PickupDto {
   @IsString()
@@ -19,11 +7,19 @@ export class PickupDto {
 }
 
 export class UpdateStoreSettingsDto {
+  /** 준비 시간(초). 시작 추천 = 예상 수령 - 준비 시간 */
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(1800)
-  basePrepSec?: number;
+  @Max(3600)
+  prepSec?: number;
+
+  /** 입구 이후 시간(초). 예상 수령 = 입구 도착 예정 + 입구 이후 시간 */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3600)
+  afterEntrySec?: number;
 
   @IsOptional()
   @IsInt()
@@ -32,12 +28,11 @@ export class UpdateStoreSettingsDto {
   serviceSecPerCar?: number;
 
   @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(600)
-  marginSec?: number;
-
-  @IsOptional()
   @IsBoolean()
   isOpen?: boolean;
+}
+
+export class UpdateMenuAvailabilityDto {
+  @IsBoolean()
+  soldOut: boolean;
 }

@@ -5,7 +5,7 @@ import { StoreGateway, VehicleGateway } from './realtime.gateway';
 
 /**
  * 도메인 이벤트를 WebSocket으로 내보낸다.
- * 매장에는 TTS 문구를 보내지 않고, 차량에는 매장 내부용 이벤트(ETA 공유, 차로 진입)를 보내지 않는다.
+ * 2차 기획: 상태·ETA·시작 추천·지연은 차량과 매장 모두에 갱신한다. TTS 문구는 차량에만 붙인다.
  */
 @Injectable()
 export class RealtimeService {
@@ -16,32 +16,37 @@ export class RealtimeService {
 
   @OnEvent(DomainEvent.OrderStatusChanged)
   onStatusChanged(e: OrderDomainEvent) {
-    this.send(DomainEvent.OrderStatusChanged, e, { store: true, vehicle: true });
-  }
-
-  @OnEvent(DomainEvent.OrderDelayed)
-  onDelayed(e: OrderDomainEvent) {
-    this.send(DomainEvent.OrderDelayed, e, { store: true, vehicle: true });
+    this.send(DomainEvent.OrderStatusChanged, e);
   }
 
   @OnEvent(DomainEvent.EtaUpdated)
   onEtaUpdated(e: OrderDomainEvent) {
-    this.send(DomainEvent.EtaUpdated, e, { store: true, vehicle: false });
+    this.send(DomainEvent.EtaUpdated, e);
+  }
+
+  @OnEvent(DomainEvent.RecommendationChanged)
+  onRecommendationChanged(e: OrderDomainEvent) {
+    this.send(DomainEvent.RecommendationChanged, e);
+  }
+
+  @OnEvent(DomainEvent.OrderDelayed)
+  onDelayed(e: OrderDomainEvent) {
+    this.send(DomainEvent.OrderDelayed, e);
+  }
+
+  @OnEvent(DomainEvent.AcceptOverdue)
+  onAcceptOverdue(e: OrderDomainEvent) {
+    this.send(DomainEvent.AcceptOverdue, e);
   }
 
   @OnEvent(DomainEvent.OrderLaneEntered)
   onLaneEntered(e: OrderDomainEvent) {
-    this.send(DomainEvent.OrderLaneEntered, e, { store: true, vehicle: false });
+    this.send(DomainEvent.OrderLaneEntered, e);
   }
 
-  @OnEvent(DomainEvent.QueueAlert)
-  onQueueAlert(e: OrderDomainEvent) {
-    this.send(DomainEvent.QueueAlert, e, { store: false, vehicle: true });
-  }
-
-  private send(name: DomainEventName, e: OrderDomainEvent, to: { store: boolean; vehicle: boolean }) {
+  private send(name: DomainEventName, e: OrderDomainEvent) {
     const payload = { orderId: e.orderId, ...e.data };
-    if (to.store) this.store.toStore(e.storeId, name, payload);
-    if (to.vehicle) this.vehicle.toVehicle(e.vehicleId, name, { ...payload, tts: e.tts });
+    this.store.toStore(e.storeId, name, payload);
+    this.vehicle.toVehicle(e.vehicleId, name, { ...payload, tts: e.tts });
   }
 }

@@ -1,57 +1,30 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Order, OrderItem, Store } from '@prisma/client';
 import { ChannelsService } from '../channels/channels.service';
 import { DomainEvent } from '../common/domain-events';
-import { haversineM } from '../common/geo';
+import { ACTIVE_STATUSES, BEFORE_PREP_STATUSES } from '../orders/order-state';
+import { OrderWithRelations } from '../orders/order-view';
 import { OrdersService } from '../orders/orders.service';
 import { minutesText } from '../orders/tts';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queue/queue.service';
-import { shouldSend } from './estimators';
-import { LatestTelemetry, TelemetryStore } from './telemetry.store';
-
-/** 예약 후 텔레메트리 없이 이 시간이 지나면 만료 취소 */
-export const RESERVED_TIMEOUT_MS = 10 * 60 * 1000;
-/** 준비 완료 후 이 시간 안에 수령하지 않으면 미수령 취소 */
-export const NO_SHOW_TIMEOUT_MS = 15 * 60 * 1000;
-/** 도착 예정이 전송 때보다 이만큼 늦어지면 지연 알림 (이후 같은 폭으로 더 늦어질 때마다 다시) */
-export const DELAY_STEP_SEC = 120;
-/** 매장 대시보드에 ETA를 다시 보내는 최소 간격 */
-export const ETA_EMIT_INTERVAL_MS = 10 * 1000;
-/** 대기 차량이 이 이상이고 더 빠른 매장이 있으면 회피를 제안 */
-export const QUEUE_ALERT_CARS = 6;
-/** 대체 매장 탐색 반경 */
-const ALTERNATIVE_RADIUS_M = 10_000;
-/** 대체 매장 ETA 추정에 쓰는 평균 속도(km/h) */
-const ALTERNATIVE_SPEED_KMH = 30;
-
-type EngineOrder = Order & { items: OrderItem[]; store: Store };
-
-export interface Alternative {
-  storeId: string;
-  storeName: string;
-  distanceM: number;
-  etaSec: number;
-  queueCars: number;
-  queueWaitSec: number;
-  /** ETA + 대기줄 시간 */
-  totalSec: number;
-}
+import { DELAY_NOTIFY_SEC, PickupTiming, RECOMMENDATION_EMPHASIS_SEC } from './pickup-timing';
+import { TelemetryStore } from './telemetry.store';
 
 /**
- * 주문을 언제 매장에 보낼지 정하고, 보낸 뒤에는 지연·미수령을 지켜본다.
- * 텔레메트리가 들어올 때마다 해당 주문을, 주기 스위퍼가 진행 중 주문 전체를 평가한다.
+ * 2차 기획: 매장 공유는 예약 직후에 끝나고, 타이밍 엔진은 시각을 계산해 알리기만 한다.
+ * - 제조 전: ETA가 바뀌면 시작 추천을 갱신하고, 60초 이상 바뀌면 강조해서 알린다.
+ * - 제조 후: 시작한 제조는 되돌리지 않고, 예상 수령이 늦어지면 지연을 공유한다.
+ * - ETA가 90초 넘게 끊기면 오래됨으로 알린다. 주문을 자동으로 취소하거나 차로 진입을 추정하지 않는다.
  */
 @Injectable()
 export class TimingEngine implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TimingEngine.name);
-  private readonly inFlight = new Set<string>();
-  /** 평가 중에 새 신호가 들어온 주문. 지금 평가가 끝나면 한 번 더 평가한다 */
-  private readonly pending = new Set<string>();
-  private readonly lastEtaEmitAt = new Map<string, number>();
+  /** 마지막으로 강조해 알린 시작 추천(ms). 이 값과 60초 이상 차이 나면 다시 알린다 */
+  private readonly recommendationBaseline = new Map<string, number>();
   private readonly delayNotifiedSec = new Map<string, number>();
-  private readonly queueAlerted = new Set<string>();
+  private readonly staleNotified = new Set<string>();
+  private readonly overdueNotified = new Set<string>();
   private timer?: NodeJS.Timeout;
 
   constructor(
@@ -74,182 +47,135 @@ export class TimingEngine implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** 진행 중인 주문 전체를 평가한다 */
-  async sweep(now?: number) {
+  /** 새 ETA를 받은 뒤 호출한다. 차량·매장 모두에 예상 수령·시작 추천을 갱신한다 */
+  async onEta(orderId: string, now = Date.now()) {
+    const order = await this.orders.findWithRelations(orderId);
+    if (!ACTIVE_STATUSES.includes(order.status)) return;
+    const timing = await this.orders.timingOf(order, now);
+    this.staleNotified.delete(orderId);
+
+    this.orders.emit(DomainEvent.EtaUpdated, order, { status: order.status, timing });
+    if (timing.etaSec !== null) {
+      const channel = await this.channels.forStore(order.store);
+      await channel.updateEta(order, timing.etaSec).catch((e) => this.logger.warn(`ETA 공유 실패 ${orderId}: ${e}`));
+    }
+
+    if (BEFORE_PREP_STATUSES.includes(order.status)) await this.checkRecommendation(order, timing);
+    if (order.status === 'PREPARING' || order.status === 'READY') await this.checkDelay(order, timing);
+  }
+
+  /** 진행 중 주문의 ETA 끊김과 매장 응답 지연을 확인한다 */
+  async sweep(now = Date.now()) {
     const active = await this.prisma.order.findMany({
-      where: { status: { in: ['RESERVED', 'SENT', 'PREPARING', 'READY'] } },
-      select: { id: true },
+      where: { status: { in: ACTIVE_STATUSES } },
+      include: { items: true, store: true },
     });
-    for (const { id } of active) await this.evaluate(id, now);
+    for (const order of active) {
+      try {
+        const view = await this.orders.view(order, now);
+        if (view.timing.etaStale && !this.staleNotified.has(order.id)) {
+          this.staleNotified.add(order.id);
+          await this.orders.recordEvent(order.id, 'eta_stale', { etaUpdatedAt: view.timing.etaUpdatedAt?.toISOString() ?? null });
+          this.orders.emit(DomainEvent.EtaUpdated, order, { status: order.status, timing: view.timing });
+        }
+        if (view.acceptOverdue && !this.overdueNotified.has(order.id)) {
+          this.overdueNotified.add(order.id);
+          this.orders.emit(
+            DomainEvent.AcceptOverdue,
+            order,
+            { sentAt: order.sentAt?.toISOString() ?? null },
+            '매장 확인이 늦어지고 있어요. 확인되면 바로 알려 드릴게요.',
+          );
+        }
+      } catch (e) {
+        this.logger.error(`주문 점검 실패 ${order.id}: ${e instanceof Error ? e.stack : e}`);
+      }
+    }
   }
 
   /**
-   * 주문 하나를 평가한다. 같은 주문을 동시에 평가하지 않고,
-   * 평가 중에 들어온 요청은 버리지 않고 끝난 뒤 한 번 더 평가한다.
+   * DT 차로 진입. 위치·저속으로 추정하지 않고, 차량 앱(운전자 확인)이나 직원이 알려 줄 때만 기록한다.
+   * 이후 예상 수령은 진입 시각 + 입구 이후 시간으로 고정된다.
    */
-  async evaluate(orderId: string, now?: number): Promise<void> {
-    if (this.inFlight.has(orderId)) {
-      this.pending.add(orderId);
-      return;
-    }
-    this.inFlight.add(orderId);
-    try {
-      await this.evaluateOnce(orderId, now ?? Date.now());
-    } finally {
-      this.inFlight.delete(orderId);
-    }
-    if (this.pending.delete(orderId)) await this.evaluate(orderId, now);
-  }
-
-  private async evaluateOnce(orderId: string, now: number) {
-    try {
-      const order = await this.prisma.order.findUnique({ where: { id: orderId }, include: { items: true, store: true } });
-      if (!order) return;
-      switch (order.status) {
-        case 'RESERVED':
-          return await this.evaluateReserved(order, now);
-        case 'SENT':
-        case 'PREPARING':
-          return await this.followSent(order, now);
-        case 'READY':
-          await this.followSent(order, now);
-          return await this.checkNoShow(order, now);
-        default:
-          this.forget(orderId);
-      }
-    } catch (e) {
-      this.logger.error(`주문 평가 실패 ${orderId}: ${e instanceof Error ? e.stack : e}`);
-    }
-  }
-
-  /** DT 차로 진입. 아직 전송 전이면 즉시 전송한다. */
   async laneEntered(orderId: string, now = new Date()) {
-    let order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true, store: true } });
-    if (order.laneEnteredAt) return order;
-    if (order.status === 'RESERVED') order = await this.orders.send(order.id, 0);
-    if (!['SENT', 'PREPARING', 'READY'].includes(order.status)) return order;
+    const order = await this.orders.findWithRelations(orderId);
+    if (order.laneEnteredAt || !ACTIVE_STATUSES.includes(order.status)) return order;
 
     await this.prisma.order.update({ where: { id: order.id }, data: { laneEnteredAt: now } });
     await this.queue.recordLaneEntry(order.id, order.storeId, now);
     await this.orders.recordEvent(order.id, 'lane_entered');
     const channel = await this.channels.forStore(order.store);
-    await channel.notifyLaneEntered(order);
-    this.orders.emit(DomainEvent.OrderLaneEntered, order, { laneEnteredAt: now.toISOString(), plateNumber: order.plateNumber });
-    return this.prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true, store: true } });
-  }
+    await channel.notifyLaneEntered(order).catch((e) => this.logger.warn(`진입 공유 실패 ${orderId}: ${e}`));
 
-  /** 현재 위치에서 더 빨리 받을 수 있는 매장. 지금 매장보다 빠른 곳만, 빠른 순 */
-  async alternatives(order: EngineOrder, now = Date.now()): Promise<Alternative[]> {
-    const latest = await this.telemetry.latest(order.id);
-    if (!latest) return [];
-    const current = await this.queue.forStore(order.store);
-    const currentTotal = this.currentEta(latest, now) + current.waitSec;
-
-    const stores = await this.prisma.store.findMany({
-      where: { isOpen: true, brandId: order.store.brandId, id: { not: order.storeId } },
+    const updated = await this.orders.findWithRelations(order.id);
+    const timing = await this.orders.timingOf(updated, now.getTime());
+    this.orders.emit(DomainEvent.OrderLaneEntered, updated, {
+      laneEnteredAt: now.toISOString(),
+      plateNumber: updated.plateNumber,
+      orderNo: updated.orderNo,
+      timing,
     });
-    const options: Alternative[] = [];
-    for (const store of stores) {
-      const distanceM = Math.round(haversineM(latest, store));
-      if (distanceM > ALTERNATIVE_RADIUS_M) continue;
-      const etaSec = Math.round((distanceM * 1.3) / ((ALTERNATIVE_SPEED_KMH * 1000) / 3600));
-      const q = await this.queue.forStore(store);
-      const totalSec = etaSec + q.waitSec;
-      if (totalSec < currentTotal) {
-        options.push({
-          storeId: store.id,
-          storeName: store.name,
-          distanceM,
-          etaSec,
-          queueCars: q.cars,
-          queueWaitSec: q.waitSec,
-          totalSec,
-        });
-      }
-    }
-    return options.sort((a, b) => a.totalSec - b.totalSec);
+    return updated;
   }
 
-  /** 마지막 ETA에서 받은 뒤 지난 시간을 뺀 현재 ETA */
-  currentEta(latest: LatestTelemetry, now = Date.now()): number {
-    return Math.max(0, latest.etaSec - Math.round((now - latest.receivedAt) / 1000));
-  }
-
-  private async evaluateReserved(order: EngineOrder, now: number) {
-    const latest = await this.telemetry.latest(order.id);
-    const lastSignal = Math.max(order.updatedAt.getTime(), latest?.receivedAt ?? 0);
-    if (now - lastSignal > RESERVED_TIMEOUT_MS) {
-      await this.orders.cancel(order.id, 'EXPIRED');
-      return this.forget(order.id);
-    }
-    if (!latest) return;
-
-    const etaSec = this.currentEta(latest, now);
-    const queue = await this.queue.forStore(order.store);
-    if (shouldSend({ etaSec, queueSec: queue.waitSec, prepSec: order.estPrepSec, marginSec: order.store.marginSec })) {
-      await this.orders.send(order.id, etaSec);
+  private async checkRecommendation(order: OrderWithRelations, timing: PickupTiming) {
+    if (!timing.recommendedStartAt || timing.etaStale) return;
+    const rec = timing.recommendedStartAt.getTime();
+    const baseline = this.recommendationBaseline.get(order.id);
+    if (baseline === undefined) {
+      this.recommendationBaseline.set(order.id, rec);
       return;
     }
-    await this.maybeAlertQueue(order, queue.cars, now);
-  }
+    const deltaSec = Math.round((rec - baseline) / 1000);
+    if (Math.abs(deltaSec) < RECOMMENDATION_EMPHASIS_SEC) return;
 
-  private async followSent(order: EngineOrder, now: number) {
-    const latest = await this.telemetry.latest(order.id);
-    if (!latest || order.laneEnteredAt) return;
-    const etaSec = this.currentEta(latest, now);
-
-    const lastEmit = this.lastEtaEmitAt.get(order.id) ?? 0;
-    if (now - lastEmit >= ETA_EMIT_INTERVAL_MS) {
-      this.lastEtaEmitAt.set(order.id, now);
-      const channel = await this.channels.forStore(order.store);
-      await channel.updateEta(order, etaSec);
-      this.orders.emit(DomainEvent.EtaUpdated, order, {
-        etaSec,
-        arrivalAt: new Date(now + etaSec * 1000).toISOString(),
-      });
-    }
-
-    if (!order.sentAt || order.etaAtSendSec === null) return;
-    const plannedArrival = order.sentAt.getTime() + order.etaAtSendSec * 1000;
-    const delaySec = Math.round((now + etaSec * 1000 - plannedArrival) / 1000);
-    const notified = this.delayNotifiedSec.get(order.id) ?? 0;
-    if (delaySec >= notified + DELAY_STEP_SEC) {
-      this.delayNotifiedSec.set(order.id, delaySec);
-      await this.orders.recordEvent(order.id, 'delayed', { delaySec, etaSec });
-      this.orders.emit(
-        DomainEvent.OrderDelayed,
-        order,
-        { delaySec, etaSec, arrivalAt: new Date(now + etaSec * 1000).toISOString() },
-        `정체로 도착이 ${minutesText(delaySec)} 늦어져 매장에 알렸어요.`,
-      );
-    }
-  }
-
-  private async checkNoShow(order: EngineOrder, now: number) {
-    if (order.readyAt && now - order.readyAt.getTime() > NO_SHOW_TIMEOUT_MS) {
-      await this.orders.cancel(order.id, 'NO_SHOW');
-      this.forget(order.id);
-    }
-  }
-
-  private async maybeAlertQueue(order: EngineOrder, cars: number, now: number) {
-    if (cars < QUEUE_ALERT_CARS || this.queueAlerted.has(order.id)) return;
-    const [best] = await this.alternatives(order, now);
-    if (!best) return;
-    this.queueAlerted.add(order.id);
-    await this.orders.recordEvent(order.id, 'queue_alert', { cars, suggestedStoreId: best.storeId });
+    this.recommendationBaseline.set(order.id, rec);
+    await this.orders.recordEvent(order.id, 'recommendation_changed', {
+      deltaSec,
+      recommendedStartAt: timing.recommendedStartAt.toISOString(),
+    });
     this.orders.emit(
-      DomainEvent.QueueAlert,
+      DomainEvent.RecommendationChanged,
       order,
-      { cars, alternative: best },
-      `${order.store.name} 앞에 차가 ${cars}대 있어요. ${best.storeName}으로 바꾸면 ${minutesText(best.totalSec)} 안에 받을 수 있어요. 바꿀까요?`,
+      {
+        deltaSec,
+        emphasize: true,
+        previousRecommendedStartAt: new Date(baseline).toISOString(),
+        recommendedStartAt: timing.recommendedStartAt.toISOString(),
+        timing,
+      },
+      deltaSec > 0
+        ? `도착이 늦어져 매장의 제조 시작 추천을 ${minutesText(deltaSec)} 늦췄어요.`
+        : `도착이 빨라져 매장의 제조 시작 추천을 ${minutesText(-deltaSec)} 앞당겼어요.`,
     );
   }
 
-  private forget(orderId: string) {
-    this.lastEtaEmitAt.delete(orderId);
+  private async checkDelay(order: OrderWithRelations, timing: PickupTiming) {
+    if (timing.etaStale) return;
+    const notified = this.delayNotifiedSec.get(order.id) ?? 0;
+    if (timing.delaySec < notified + DELAY_NOTIFY_SEC) return;
+
+    this.delayNotifiedSec.set(order.id, timing.delaySec);
+    await this.orders.recordEvent(order.id, 'delayed', { delaySec: timing.delaySec });
+    this.orders.emit(
+      DomainEvent.OrderDelayed,
+      order,
+      {
+        delaySec: timing.delaySec,
+        expectedPickupAt: timing.expectedPickupAt?.toISOString() ?? null,
+        plannedPickupAt: order.plannedPickupAt?.toISOString() ?? null,
+        timing,
+      },
+      `도착이 ${minutesText(timing.delaySec)} 늦어진다고 매장에 알렸어요.`,
+    );
+  }
+
+  /** 시연·테스트용: 주문별 알림 기준을 비운다 */
+  forget(orderId: string) {
+    this.recommendationBaseline.delete(orderId);
     this.delayNotifiedSec.delete(orderId);
-    this.queueAlerted.delete(orderId);
+    this.staleNotified.delete(orderId);
+    this.overdueNotified.delete(orderId);
     this.telemetry.forget(orderId);
   }
 }

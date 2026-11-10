@@ -7,13 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// 2차 기획 주문 상태
 enum OrderStatus {
-  NEEDS_CONFIRMATION
-  RESERVED
-  SENT
+  /// 매장 확인 중: 예약 확정 직후 매장에 공유됨
+  PENDING_ACCEPT
+  /// 제조 대기: 직원이 수락함
+  ACCEPTED
+  /// 제조 중
   PREPARING
+  /// 준비 완료
   READY
+  /// 수령 완료
   PICKED_UP
+  /// 취소 확인 중: 운전자가 취소를 요청했고 매장 판단을 기다림
+  CANCEL_REQUESTED
+  /// 매장이 주문을 거절함
+  REJECTED
+  /// 취소 완료
   CANCELLED
 }
 
@@ -90,23 +100,28 @@ model Brand {
 }
 
 model Store {
-  id               String       @id @default(uuid())
-  brandId          String       @map("brand_id")
-  name             String
-  lat              Float
-  lng              Float
+  id                 String               @id @default(uuid())
+  brandId            String               @map("brand_id")
+  name               String
+  lat                Float
+  lng                Float
   /// DT 차로 지오펜스: 중심점 + 반경(m)
-  laneLat          Float        @map("lane_lat")
-  laneLng          Float        @map("lane_lng")
-  laneRadiusM      Int          @default(40) @map("lane_radius_m")
-  basePrepSec      Int          @default(60) @map("base_prep_sec")
-  serviceSecPerCar Int          @default(60) @map("service_sec_per_car")
-  marginSec        Int          @default(30) @map("margin_sec")
-  isOpen           Boolean      @default(true) @map("is_open")
-  brand            Brand        @relation(fields: [brandId], references: [id])
-  orders           Order[]
-  staff            StoreStaff[]
-  dtVisits         DtVisit[]
+  laneLat            Float                @map("lane_lat")
+  laneLng            Float                @map("lane_lng")
+  laneRadiusM        Int                  @default(40) @map("lane_radius_m")
+  /// 준비 시간(초). 시작 추천 = 예상 수령 - 준비 시간
+  prepSec            Int                  @default(180) @map("prep_sec")
+  /// 입구 이후 시간(초). 예상 수령 = 입구 도착 예정 + 입구 이후 시간
+  afterEntrySec      Int                  @default(120) @map("after_entry_sec")
+  serviceSecPerCar   Int                  @default(60) @map("service_sec_per_car")
+  isOpen             Boolean              @default(true) @map("is_open")
+  /// 이 매장에서 품절된 메뉴
+  soldOutMenuItemIds String[]             @default([]) @map("sold_out_menu_item_ids")
+  brand              Brand                @relation(fields: [brandId], references: [id])
+  orders             Order[]
+  staff              StoreStaff[]
+  dtVisits           DtVisit[]
+  orderCounters      OrderNumberCounter[]
 
   @@map("stores")
 }
@@ -151,40 +166,67 @@ model Favorite {
 }
 
 model Order {
-  id              String       @id @default(uuid())
-  userId          String       @map("user_id")
-  vehicleId       String       @map("vehicle_id")
-  storeId         String       @map("store_id")
-  status          OrderStatus
-  source          OrderSource
-  favoriteId      String?      @map("favorite_id")
-  totalAmount     Int          @map("total_amount")
-  plateNumber     String       @map("plate_number")
-  externalOrderId String?      @map("external_order_id")
-  estPrepSec      Int          @map("est_prep_sec")
-  etaAtSendSec    Int?         @map("eta_at_send_sec")
-  idempotencyKey  String?      @unique @map("idempotency_key")
-  sentAt          DateTime?    @map("sent_at")
-  laneEnteredAt   DateTime?    @map("lane_entered_at")
-  readyAt         DateTime?    @map("ready_at")
-  pickedUpAt      DateTime?    @map("picked_up_at")
-  cancelledAt     DateTime?    @map("cancelled_at")
-  cancelReason    String?      @map("cancel_reason")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
-  user            User         @relation(fields: [userId], references: [id])
-  vehicle         Vehicle      @relation(fields: [vehicleId], references: [id])
-  store           Store        @relation(fields: [storeId], references: [id])
-  items           OrderItem[]
-  events          OrderEvent[]
-  telemetry       Telemetry[]
-  payment         Payment?
-  dtVisit         DtVisit?
+  id                 String       @id @default(uuid())
+  userId             String       @map("user_id")
+  vehicleId          String       @map("vehicle_id")
+  storeId            String       @map("store_id")
+  /// 매장·운전자가 함께 보는 주문번호. 예: P-021
+  orderNo            String?      @map("order_no")
+  status             OrderStatus
+  source             OrderSource
+  favoriteId         String?      @map("favorite_id")
+  totalAmount        Int          @map("total_amount")
+  plateNumber        String       @map("plate_number")
+  externalOrderId    String?      @map("external_order_id")
+  /// 예약 당시 매장 준비 시간(초)
+  estPrepSec         Int          @map("est_prep_sec")
+  idempotencyKey     String?      @unique @map("idempotency_key")
+  /// 매장에 공유한 시각 (예약 확정 직후)
+  sentAt             DateTime?    @map("sent_at")
+  acceptedAt         DateTime?    @map("accepted_at")
+  rejectedAt         DateTime?    @map("rejected_at")
+  rejectReason       String?      @map("reject_reason")
+  /// 제조 시작 시각
+  preparingAt        DateTime?    @map("preparing_at")
+  /// 제조를 시작할 때 계산한 예상 수령 시각. 제조 후 지연의 기준
+  plannedPickupAt    DateTime?    @map("planned_pickup_at")
+  laneEnteredAt      DateTime?    @map("lane_entered_at")
+  readyAt            DateTime?    @map("ready_at")
+  pickedUpAt         DateTime?    @map("picked_up_at")
+  cancelRequestedAt  DateTime?    @map("cancel_requested_at")
+  cancelRequestNote  String?      @map("cancel_request_note")
+  /// 취소 요청 전 상태. 매장이 취소를 거절하면 이 상태로 돌아간다
+  statusBeforeCancel OrderStatus? @map("status_before_cancel")
+  cancelledAt        DateTime?    @map("cancelled_at")
+  cancelReason       String?      @map("cancel_reason")
+  cancelNote         String?      @map("cancel_note")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+  user               User         @relation(fields: [userId], references: [id])
+  vehicle            Vehicle      @relation(fields: [vehicleId], references: [id])
+  store              Store        @relation(fields: [storeId], references: [id])
+  items              OrderItem[]
+  events             OrderEvent[]
+  telemetry          Telemetry[]
+  payment            Payment?
+  dtVisit            DtVisit?
 
   @@index([storeId, status])
   @@index([userId, createdAt])
   @@index([status])
   @@map("orders")
+}
+
+/// 매장별·날짜별(KST) 주문번호 순번
+model OrderNumberCounter {
+  storeId String @map("store_id")
+  /// YYYY-MM-DD (KST)
+  day     String
+  last    Int    @default(0)
+  store   Store  @relation(fields: [storeId], references: [id])
+
+  @@id([storeId, day])
+  @@map("order_number_counters")
 }
 
 model OrderItem {
@@ -217,9 +259,9 @@ model Telemetry {
   id         String          @id @default(uuid())
   orderId    String          @map("order_id")
   etaSec     Int?            @map("eta_sec")
-  lat        Float
-  lng        Float
-  speedKmh   Float           @map("speed_kmh")
+  lat        Float?
+  lng        Float?
+  speedKmh   Float?          @map("speed_kmh")
   gear       String?
   source     TelemetrySource
   recordedAt DateTime        @map("recorded_at")
