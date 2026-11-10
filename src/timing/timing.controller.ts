@@ -1,10 +1,10 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { ApiBearerAuth, ApiConflictResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentDriver, RequireRole } from '../auth/auth.decorators';
-import { OrderResponse } from '../orders/orders.response.dto';
 import { DriverPrincipal } from '../auth/auth.types';
+import { OrderResponse } from '../orders/orders.response.dto';
 import { TelemetryDto } from './timing.dto';
-import { AlternativeResponse, TelemetryResponse } from './timing.response.dto';
+import { TelemetryResponse } from './timing.response.dto';
 import { TimingService } from './timing.service';
 
 @ApiTags('timing')
@@ -17,9 +17,9 @@ export class TimingController {
   @Post('telemetry')
   @HttpCode(200)
   @ApiOperation({
-    summary: '텔레메트리 (5~10초 간격)',
+    summary: 'ETA 갱신 (30초마다)',
     description:
-      'NaviHelper ETA·위치·속도·기어. etaSec이 없으면 서버가 위치·속도로 추정한다. 받을 때마다 전송 시점을 평가하고, DT 차로 지오펜스에 15km/h 이하로 들어오면 차로 진입으로 처리한다.',
+      'NaviHelper의 매장 입구까지 남은 시간(etaSec, 필수). 받을 때마다 예상 수령·시작 추천을 다시 계산해 차량·매장에 eta.updated로 보낸다. 90초 넘게 오지 않으면 timing.etaStale이 true가 된다. 끝난 주문이면 저장하지 않고 현재 상태만 돌려준다.',
   })
   @ApiOkResponse({ type: TelemetryResponse })
   telemetry(@CurrentDriver() driver: DriverPrincipal, @Param('id', ParseUUIDPipe) id: string, @Body() dto: TelemetryDto) {
@@ -28,16 +28,13 @@ export class TimingController {
 
   @Post('lane-entered')
   @HttpCode(200)
-  @ApiOperation({ summary: 'DT 차로 진입', description: '아직 전송 전이면 즉시 전송한다.' })
+  @ApiOperation({
+    summary: 'DT 차로 진입 알림',
+    description: '운전자가 진입을 확인했을 때 보낸다. 서버는 위치·저속만으로 진입을 확정하지 않는다. 이후 예상 수령은 진입 시각 + 입구 이후 시간.',
+  })
   @ApiOkResponse({ type: OrderResponse })
+  @ApiConflictResponse({ description: '끝난 주문' })
   laneEntered(@CurrentDriver() driver: DriverPrincipal, @Param('id', ParseUUIDPipe) id: string) {
     return this.timing.laneEntered(driver, id);
-  }
-
-  @Get('alternatives')
-  @ApiOperation({ summary: '더 빨리 받을 수 있는 매장', description: '지금 매장보다 ETA + 대기줄 시간이 짧은 매장만, 빠른 순.' })
-  @ApiOkResponse({ type: AlternativeResponse, isArray: true })
-  alternatives(@CurrentDriver() driver: DriverPrincipal, @Param('id', ParseUUIDPipe) id: string) {
-    return this.timing.alternatives(driver, id);
   }
 }

@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ChannelsModule } from '../channels/channels.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { TelemetryModule } from '../timing/telemetry.module';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
 @Module({
-  imports: [ChannelsModule, PaymentsModule],
+  imports: [ChannelsModule, PaymentsModule, TelemetryModule],
   controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService],

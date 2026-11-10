@@ -1,12 +1,10 @@
-import { OrderResponse } from '../orders/orders.response.dto';
-
 export class StoreSettingsResponse {
-  /** 매장 기본 제조 시간(초) */
-  basePrepSec: number;
-  /** DT 차량 1대 처리 시간(초) */
+  /** 준비 시간(초) */
+  prepSec: number;
+  /** 입구 이후 시간(초) */
+  afterEntrySec: number;
+  /** DT 차량 1대 처리 시간(초). 매장 검색의 대기 시간 표시에만 쓴다 */
   serviceSecPerCar: number;
-  /** 전송 여유 시간(초) */
-  marginSec: number;
   isOpen: boolean;
 }
 
@@ -26,10 +24,9 @@ export class StoreOverviewResponse {
   settings: StoreSettingsResponse;
 }
 
-export class StoreOrderResponse extends OrderResponse {
-  /** 도착까지 남은 시간(초). 차로에 들어왔으면 0, 텔레메트리가 없으면 null */
-  etaSec: number | null;
-  /** 전송 때 예상한 도착 시각보다 늦어진 시간(초) */
-  delaySec: number;
-  arrivalAt: Date | null;
+export class StoreMenuItemResponse {
+  id: string;
+  name: string;
+  price: number;
+  soldOut: boolean;
 }

@@ -16,8 +16,39 @@ export class OrderItemResponse {
   qty: number;
 }
 
+export class PickupTimingResponse {
+  /** 입구까지 남은 시간(초). 차로에 들어왔으면 0, ETA가 없으면 null */
+  etaSec: number | null;
+  /** 마지막 ETA 수신 시각 */
+  etaUpdatedAt: Date | null;
+  /** ETA가 90초 넘게 끊김. 추천은 마지막 ETA 기준으로 보류 */
+  etaStale: boolean;
+  /** 입구 도착 예정 */
+  entranceArrivalAt: Date | null;
+  /** 예상 수령 = 입구 도착 예정 + 입구 이후 시간 */
+  expectedPickupAt: Date | null;
+  /** 시작 추천 = 예상 수령 - 준비 시간 */
+  recommendedStartAt: Date | null;
+  /** 매장 준비 시간(초) */
+  prepSec: number;
+  /** 매장 입구 이후 시간(초) */
+  afterEntrySec: number;
+  /** 제조 시작 후, 그때 예상한 수령 시각보다 늦어진 시간(초) */
+  delaySec: number;
+}
+
+export class CancelRequestResponse {
+  requestedAt: Date;
+  note: string | null;
+  /** 매장이 취소를 거절하면 돌아갈 상태 */
+  @ApiProperty({ enum: OrderStatus, enumName: 'OrderStatus', nullable: true })
+  statusBefore: OrderStatus | null;
+}
+
 export class OrderResponse {
   id: string;
+  /** 매장·운전자가 함께 보는 주문번호. 예: P-021 */
+  orderNo: string | null;
   @ApiProperty({ enum: OrderStatus, enumName: 'OrderStatus' })
   status: OrderStatus;
   @ApiProperty({ enum: OrderSource, enumName: 'OrderSource' })
@@ -26,45 +57,59 @@ export class OrderResponse {
   items: OrderItemResponse[];
   /** 총액(원) */
   totalAmount: number;
-  /** 창구 매칭에 쓰는 차량번호 */
+  /** 직원 검색 보조용 차량번호 */
   plateNumber: string;
-  /** 예상 제조 시간(초) */
-  estPrepSec: number;
-  /** 매장 쪽 주문 번호. 전송 후에 생긴다 */
   externalOrderId: string | null;
+  timing: PickupTimingResponse;
+  /** 매장 확인 중으로 2분이 지남. 차량 앱은 상태를 다시 조회해 안내한다 */
+  acceptOverdue: boolean;
   createdAt: Date;
+  /** 매장에 공유한 시각 */
   sentAt: Date | null;
-  laneEnteredAt: Date | null;
+  acceptedAt: Date | null;
+  rejectedAt: Date | null;
+  /** SOLD_OUT · BUSY · CLOSED · OTHER */
+  rejectReason: string | null;
+  /** 제조 시작 시각 */
+  preparingAt: Date | null;
   readyAt: Date | null;
   pickedUpAt: Date | null;
+  laneEnteredAt: Date | null;
+  cancelRequest: CancelRequestResponse | null;
   cancelledAt: Date | null;
-  /** USER · EXPIRED · NO_SHOW · STORE_REJECTED · PAYMENT_DECLINED · STORE */
+  /** USER · NO_SHOW · STORE · PAYMENT_DECLINED · STORE_UNAVAILABLE */
   cancelReason: string | null;
+  cancelNote: string | null;
+}
+
+export class QuoteItemResponse extends OrderItemResponse {
+  /** 이 매장에서 품절 */
+  soldOut: boolean;
 }
 
 export class QuoteResponse {
   storeId: string;
   storeName: string;
-  items: OrderItemResponse[];
+  items: QuoteItemResponse[];
   totalAmount: number;
-  estPrepSec: number;
-  /** 금액 재확인 문구. 예: "아메리카노 한 잔, 4,500원 주문할까요?" */
+  /** 품절 메뉴가 없으면 true */
+  available: boolean;
+  prepSec: number;
+  afterEntrySec: number;
+  /** 확인 문구. 예: "아이스 아메리카노 한 잔, 4,500원을 픽미 양재 DT점에 예약할까요?" */
   tts: string;
 }
 
 export class ReserveResponse {
   order: OrderResponse;
-  /** 정차 후 확인이 필요한 이유. 비어 있으면 바로 예약됨 */
-  @ApiProperty({
-    enum: ['VOICE_DISABLED', 'NOT_FAVORITE', 'OVER_PER_ORDER_LIMIT', 'OVER_DAILY_LIMIT'],
-    isArray: true,
-  })
-  confirmationReasons: string[];
   /** 예약 결과 안내 문구. 같은 Idempotency-Key로 다시 보내면 없음 */
   tts?: string;
 }
 
-export class ChangeStoreResponse {
-  order: OrderResponse;
-  tts: string;
+export class ReserveConflictResponse {
+  /** ACTIVE_ORDER_EXISTS · SOLD_OUT · PRICE_CHANGED */
+  code: string;
+  message: string;
+  /** SOLD_OUT · PRICE_CHANGED일 때 새 조건 */
+  quote?: QuoteResponse;
 }

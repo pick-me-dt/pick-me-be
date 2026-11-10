@@ -31,12 +31,18 @@ export const SEED = {
     noShow: '00000000-0000-4000-8000-000000000603',
   },
   staffPassword: 'pickme1234',
+  /** 시연 주문번호. 오늘 양재 DT점의 다음 주문이 P-021이 되도록 맞춘다 */
+  demoNextOrderNo: 21,
 } as const;
 
+/** 2차 기획 §5 예시값: 준비 3분, 입구 이후 2분 */
+export const DEFAULT_PREP_SEC = 180;
+export const DEFAULT_AFTER_ENTRY_SEC = 120;
+
 export const STORES = [
-  { id: SEED.stores.yangjae, name: '픽미 DT 양재점', lat: 37.4705, lng: 127.035, loginId: 'yangjae' },
-  { id: SEED.stores.pangyo, name: '픽미 DT 판교점', lat: 37.3947, lng: 127.1112, loginId: 'pangyo' },
-  { id: SEED.stores.jeongja, name: '픽미 DT 정자점', lat: 37.367, lng: 127.108, loginId: 'jeongja' },
+  { id: SEED.stores.yangjae, name: '픽미 양재 DT점', lat: 37.4705, lng: 127.035, loginId: 'yangjae' },
+  { id: SEED.stores.pangyo, name: '픽미 판교 DT점', lat: 37.3947, lng: 127.1112, loginId: 'pangyo' },
+  { id: SEED.stores.jeongja, name: '픽미 정자 DT점', lat: 37.367, lng: 127.108, loginId: 'jeongja' },
 ];
 
 const MENU: { id: string; name: string; price: number; prepSec: number; unit?: string }[] = [
@@ -69,6 +75,10 @@ export async function seed(prisma: PrismaClient): Promise<void> {
       // DT 차로 입구는 매장 좌표에서 약 30m 떨어진 곳으로 둔다
       laneLat: s.lat + 0.00027,
       laneLng: s.lng,
+      prepSec: DEFAULT_PREP_SEC,
+      afterEntrySec: DEFAULT_AFTER_ENTRY_SEC,
+      isOpen: true,
+      soldOutMenuItemIds: [],
     };
     await prisma.store.upsert({ where: { id: s.id }, update: store, create: { id: s.id, ...store } });
     await prisma.storeStaff.upsert({
@@ -99,16 +109,14 @@ export async function seed(prisma: PrismaClient): Promise<void> {
       model: '더 뉴 그랜저',
     },
   });
-  await prisma.favorite.upsert({
-    where: { id: SEED.favoriteId },
-    update: {},
-    create: {
-      id: SEED.favoriteId,
-      userId: SEED.userId,
-      alias: '평소 그거',
-      items: [{ menuItemId: SEED.menu.americano, qty: 1 }],
-    },
-  });
+  // 2차 기획 시연 주문: 양재 DT점 · 아이스 아메리카노
+  const usual = {
+    userId: SEED.userId,
+    storeId: SEED.stores.yangjae,
+    alias: '평소 그거',
+    items: [{ menuItemId: SEED.menu.icedAmericano, qty: 1 }],
+  };
+  await prisma.favorite.upsert({ where: { id: SEED.favoriteId }, update: usual, create: { id: SEED.favoriteId, ...usual } });
   await prisma.favorite.upsert({
     where: { id: SEED.favoriteSetId },
     update: {},
@@ -124,6 +132,18 @@ export async function seed(prisma: PrismaClient): Promise<void> {
   });
 
   await seedPastOrders(prisma);
+
+  // 오늘 양재 DT점 순번이 아직 없으면 다음 주문이 P-021이 되게 한다
+  await prisma.orderNumberCounter.upsert({
+    where: { storeId_day: { storeId: SEED.stores.yangjae, day: kstDay() } },
+    update: {},
+    create: { storeId: SEED.stores.yangjae, day: kstDay(), last: SEED.demoNextOrderNo - 1 },
+  });
+}
+
+/** KST 기준 YYYY-MM-DD */
+function kstDay(now = Date.now()): string {
+  return new Date(now + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 /** 시연 차량의 지난 주문. 이미 있으면 건너뛴다 */
@@ -172,22 +192,26 @@ async function seedPastOrders(prisma: PrismaClient) {
         source: 'VOICE',
         totalAmount: total,
         plateNumber: SEED.plateNumber,
+        orderNo: `P-${o.id.slice(-3)}`,
         externalOrderId: `MOCK-${o.id.slice(-4)}`,
-        estPrepSec: Math.max(...lines.map((l) => l.prepSec)),
-        etaAtSendSec: 120,
+        estPrepSec: DEFAULT_PREP_SEC,
         createdAt: t(0),
-        sentAt: t(8),
+        sentAt: t(0),
+        acceptedAt: t(1),
+        preparingAt: t(8),
         laneEnteredAt: pickedUp ? t(10) : null,
         readyAt: t(11),
         pickedUpAt: pickedUp ? t(11) : null,
         cancelledAt: pickedUp ? null : t(26),
         cancelReason: pickedUp ? null : 'NO_SHOW',
+        cancelNote: pickedUp ? null : '매장에서 미수령으로 종료',
         items: { create: lines.map((l) => ({ menuItemId: l.id, name: l.name, unitPrice: l.price, qty: l.qty })) },
         payment: { create: { amount: total, status: pickedUp ? 'CAPTURED' : 'VOIDED', providerRef: `mockpay_seed_${o.id.slice(-4)}` } },
         events: {
           create: [
             { type: 'created', createdAt: t(0) },
-            { type: 'sent', createdAt: t(8) },
+            { type: 'accepted', createdAt: t(1) },
+            { type: 'preparing', createdAt: t(8) },
             { type: 'ready', createdAt: t(11) },
             pickedUp ? { type: 'picked_up', createdAt: t(11) } : { type: 'cancelled', payload: { reason: 'NO_SHOW' }, createdAt: t(26) },
           ],

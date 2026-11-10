@@ -2,9 +2,9 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { MockDtAdapter } from '../channels/mock-dt/mock-dt.adapter';
 import { TokenService } from '../auth/token.service';
 import { ACTIVE_STATUSES } from '../orders/order-state';
-import { toOrderView } from '../orders/order-view';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TimingEngine } from '../timing/timing-engine.service';
 import { seed, SEED, STORES } from '../seed/seed';
 import { SimulatorService } from './simulator.service';
 
@@ -24,6 +24,7 @@ export class DevFixturesService {
     private readonly simulator: SimulatorService,
     private readonly orders: OrdersService,
     private readonly tokens: TokenService,
+    private readonly engine: TimingEngine,
   ) {}
 
   /** 시드 차량의 운전자 토큰과 매장별 직원 토큰 */
@@ -46,13 +47,17 @@ export class DevFixturesService {
     };
   }
 
-  /** 진행 중 주문과 시뮬레이션을 모두 정리하고 시드 데이터(매장 위치 포함)를 되돌린다 */
+  /** 진행 중 주문과 시뮬레이션을 모두 정리하고 시드 데이터(매장 위치·설정·품절 포함)를 되돌린다. 양재 DT점 다음 주문번호는 P-021 */
   async reset() {
     const stoppedSimulations = this.simulator.stopAll();
     const active = await this.prisma.order.findMany({ where: { status: { in: ACTIVE_STATUSES } }, select: { id: true } });
-    for (const { id } of active) await this.orders.cancel(id, 'USER', 'dev-reset').catch(() => undefined);
+    for (const { id } of active) {
+      await this.orders.cancel(id, 'DEV_RESET').catch(() => undefined);
+      this.engine.forget(id);
+    }
     this.mockDt.resetQueues();
     await seed(this.prisma);
+    await this.orders.setNextOrderNo(SEED.stores.yangjae, SEED.demoNextOrderNo);
     return { cancelledOrders: active.length, stoppedSimulations };
   }
 
@@ -76,30 +81,30 @@ export class DevFixturesService {
 
   /**
    * 주문을 다음 단계로 넘긴다. 차량 앱 화면을 매장 대시보드 없이 확인할 때 쓴다.
-   * NEEDS_CONFIRMATION → RESERVED → SENT → PREPARING → READY → PICKED_UP
+   * PENDING_ACCEPT → ACCEPTED → PREPARING → READY → PICKED_UP, CANCEL_REQUESTED → CANCELLED(승인)
    */
   async advance(orderId: string) {
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    const { storeId } = order;
     switch (order.status) {
-      case 'NEEDS_CONFIRMATION':
-        await this.orders.transition(orderId, 'RESERVED', {}, { type: 'confirmed', payload: { by: 'dev' } });
+      case 'PENDING_ACCEPT':
+        await this.orders.accept(storeId, orderId);
         break;
-      case 'RESERVED':
-        await this.orders.send(orderId, 0);
-        break;
-      case 'SENT':
-        await this.orders.markPreparing(order.storeId, orderId);
+      case 'ACCEPTED':
+        await this.orders.startPreparing(storeId, orderId);
         break;
       case 'PREPARING':
-        await this.orders.markReady(order.storeId, orderId);
+        await this.orders.markReady(storeId, orderId);
         break;
       case 'READY':
-        await this.orders.pickup(order.storeId, orderId);
+        await this.orders.pickup(storeId, orderId);
+        break;
+      case 'CANCEL_REQUESTED':
+        await this.orders.approveCancel(storeId, orderId, 'dev');
         break;
       default:
         throw new ConflictException(`${order.status} 주문은 더 넘길 단계가 없습니다`);
     }
-    const updated = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true, store: true } });
-    return toOrderView(updated);
+    return this.orders.view(await this.orders.findWithRelations(orderId));
   }
 }
